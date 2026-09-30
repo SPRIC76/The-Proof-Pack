@@ -23,12 +23,12 @@ the round is about the occluder.
 
 ## How to take a reading
 
-- **Use `getBoundingClientRect` and `getComputedStyle`, not pixels.** In some agents' built-in browser panes a screenshot taken after scrolling
-  comes back black or as a
-  stale frame; zoom-to-region is unsupported. For a picture of something lower on
-  the page, hide the elements above it (`style.display='none'`), shoot at scroll 0,
-  then reload. A load under test is the exception: its frames are the evidence
-  (First frames, below).
+- **Use `getBoundingClientRect` and `getComputedStyle`, not pixels.** In some
+  agents' built-in browser panes a screenshot taken after scrolling comes back
+  black or as a stale frame; zoom-to-region is unsupported. For a picture of
+  something lower on the page, hide the elements above it (`style.display='none'`),
+  shoot at scroll 0, then reload. A load under test is the exception: its frames
+  are the evidence (First frames, below).
 - **Settle before reading.** A theme flip or class change can start hundreds of
   transitions; a mid-transition computed value is a real value and looks like
   evidence. Run `document.getAnimations().forEach(a => a.finish())` first and
