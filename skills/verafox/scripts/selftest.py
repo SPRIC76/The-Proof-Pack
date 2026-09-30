@@ -1286,7 +1286,7 @@ def main():
         jsrv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), J)
         threading.Thread(target=jsrv.serve_forever, daemon=True).start()
         # A home of the test's own: this machine's real key sits in
-        # ~/.agents/.env, and no test may ever read it.
+        # the client's key file, and no test may ever read it.
         home28 = os.path.join(tmp, "home28")
         os.makedirs(os.path.join(home28, ".agents"))
         fake = dict(os.environ, TYPESAFE_API_KEY="test-key-not-real",

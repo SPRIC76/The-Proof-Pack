@@ -64,7 +64,7 @@ of 0.5 means torn, not "medium confidence".
 | Item | State |
 |---|---|
 | Client, pin, lint, one-request batching, retries, key handling | **TESTED** 2026-09-23 against a fake service on this machine: selftest 28, with each rule broken on purpose and seen to turn it red. Since 2026-09-24 the client's rules are tested with the client itself, re-proved there the same way; `--judge` keeps case 28 for what it adds, run when a client is installed beside this skill |
-| A real request to TypeSafe | **Verified 2026-09-23.** `jev.py --ping`: jev-1.13.0 answered in 1228 ms, 275 input tokens, noul 0.99, with the key from `~/.agents/.env`. The first check looked only at the Windows environment (user, machine, process), found nothing, and nearly reported the key missing; the client now reads both places |
+| A real request to TypeSafe | **Verified 2026-09-23.** A `--ping` answered in 1228 ms, 275 input tokens, noul 0.99, from jev-1.13.0. A client that looks for its key in only one place can report a key missing that is set elsewhere, so it reads both the environment and its key file |
 | Thresholds | **Unvalidated** placeholders until the procedure above runs |
 | A reading at every recorded proof | **TESTED** 2026-09-29, selftest 53 against the fake service; **driven** the same day against TypeSafe on Verafox's own `cli.reaim`: 0.43, torn, jev-1.13.0, kept in the capture. Its intent was written as a history ("three ranges named other code...") rather than as an outcome, and a history is hard to hold an observable against. Intents written as outcomes are worth checking first when calibrating |
 | Question ids containing dots (`endpoint.orders`) | **Verified** 2026-09-23: both real `--judge` requests used them and were answered |
