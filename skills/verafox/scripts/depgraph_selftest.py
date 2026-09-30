@@ -1,5 +1,7 @@
 # Deps: python3.10+ stdlib, git optional | Path: scripts | Filename: depgraph_selftest.py | Created: 2026-09-29
 # -*- coding: utf-8 -*-
+# The strings below are fixtures Mutate reads as data, not things this file does:
+# mutate: fixture
 """depgraph_selftest.py - the cases depgraph.py must not regress on.
 
 Run:  python -B scripts/depgraph_selftest.py       (exit 0 = all green)
@@ -475,6 +477,15 @@ def main():
         check("says the graph is empty", re.match(r"RESULT: 0 hub", last_line(out)) is not None, out)
         rc, out = run(os.path.join(tmp, "does-not-exist"), "hubs")
         result_line("a project path that does not exist", rc, out, 2)
+        # The pack's reviewer (2026-09-30): on a clean tree `cycles` ended
+        # "0 cycle(s) among 0 file(s)", which reads as an empty graph - the
+        # count was files in cycles. With no cycle it now says what the graph holds.
+        rc, out = run(r, "cycles")
+        result_line("cycles on the repo above, which has none", rc, out, 0)
+        check("with no cycle, the RESULT line says how many files the graph holds, "
+              "not 'among 0 file(s)'", "among 0 file" not in last_line(out)
+              and re.match(r"RESULT: 0 cycle\(s\), \d+ file\(s\) in the graph",
+                           last_line(out)) is not None, out)
 
         # ------------------------------------------------ 13 a large file
         print("\n13. a large file is parsed, not capped away")

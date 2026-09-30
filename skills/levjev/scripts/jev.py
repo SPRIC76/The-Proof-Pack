@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """jev.py - the one way to ask Jev (TypeSafe's System One model) a question.
 
-Version 1.0 | Deps: Python 3 standard library only | Parent: levjev skill 1.0.0 |
+Version 1.0 | Deps: Python 3 standard library only | Parent: levjev skill 1.0.3 |
 Path: scripts | Filename: jev.py | Created: 2026-09-23
 
 WHAT IT ENFORCES, so that nobody has to remember it (a constraint that has to be

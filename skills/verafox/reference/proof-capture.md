@@ -14,6 +14,11 @@ from without building a separate metrics project.
   artifacts/<feature-id>/<timestamp>-<name>.<ext>     screenshots, response bodies, logs
 ```
 
+The timestamp is to the second. A second capture inside the same second, or a
+parallel run, is written as `<UTC-timestamp>-<commit>~2.json` (`~3`, ...): the name
+is taken exclusively, so no capture ever replaces another, and `~n` sorts after the
+plain name.
+
 In the project, not in the skill: proof belongs beside the code it certifies, travels
 with the clone, and is reviewable in a diff. The skill holds the schema and the
 registry; the project holds its own evidence.

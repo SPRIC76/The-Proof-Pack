@@ -1388,8 +1388,12 @@ def cmd_cycles(g, a):
                 if w in members:
                     print("  %s -> %s  (%s)" % (v, w, _fmt_edge(adj[v][w])))
         total += len(c)
-    print("RESULT: %d cycle(s) among %d file(s)%s" % (
-        len(comps), total, "" if a.links else " (code edges; --links adds doc links and references)"))
+    # "0 cycle(s) among 0 file(s)" read as an empty graph on a clean tree (the
+    # pack's reviewer, 2026-09-30): with no cycle, say what the graph holds.
+    print("RESULT: %s%s" % (
+        "%d cycle(s) among %d file(s)" % (len(comps), total) if comps
+        else "0 cycle(s), %d file(s) in the graph" % len(g.nodes),
+        "" if a.links else " (code edges; --links adds doc links and references)"))
     return 1 if comps and a.fail_on_cycles else 0
 
 

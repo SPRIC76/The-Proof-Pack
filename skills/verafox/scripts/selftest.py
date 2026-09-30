@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# The strings below are fixtures Mutate reads as data, not things this file does:
+# mutate: fixture
 """selftest.py - the cases featuremap.py must not regress on.
 
 Run:  python scripts/selftest.py       (exit 0 = all green)
@@ -23,6 +25,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FM = os.path.join(HERE, "featuremap.py")
@@ -60,6 +63,13 @@ def commit(cwd, msg):
     git(cwd, "add", "-A")
     git(cwd, "-c", "user.name=t", "-c", "user.email=t@example.com",
         "commit", "-q", "-m", msg)
+
+
+def commit_only(cwd, msg, *paths):
+    """Commit the named files alone; the map stays as it is in the working tree."""
+    git(cwd, "add", "--", *paths)
+    git(cwd, "-c", "user.name=t", "-c", "user.email=t@example.com",
+        "commit", "-q", "-m", msg, "--", *paths)
 
 
 def put(root, relpath, text):
@@ -1789,8 +1799,11 @@ def main():
         rc, out = run(t47, "--reaim")
         with open(os.path.join(t47, "FEATURE-MAP.md"), encoding="utf-8") as fh:
             m47 = fh.read()
+        # A one-line pointer stays one line; since 1.4.5 --reaim also stamps
+        # each range with the commit whose lines it is in (case 58).
         check("--reaim rewrites each moved range in place",
-              rc == 0 and "big.py:23-28" in m47 and "big.py:43\n" in m47
+              rc == 0 and "big.py:23-28" in m47
+              and re.search(r"big\.py:43( @ [0-9a-f]{7,})?\n", m47)
               and "big.py:4-6" in m47 and "big.py:20-25" not in m47, out[-1500:])
         rc, out = run(t47, "--check")
         check("after --reaim, --check passes", rc == 0, out[-1500:])
@@ -1861,9 +1874,11 @@ def main():
               rc == 1 and hi49 and "47 at " in hi49[0] and "57 now" in hi49[0]
               and "region 45-50 at " in hi49[0], out[-2000:])
         rc, out = run(t49, "--reaim")
+        # Until 1.4.5 this asserted silence about ui.high; a range --reaim
+        # declines is now named, with where it sits (case 60).
         check("--reaim moves ui.low to today's lines and leaves ui.high, whose "
-              "code changed", "big.py:25-30 -> big.py:30-35" in out
-              and "ui.high" not in out, out[-1500:])
+              "code changed, naming it", "big.py:25-30 -> big.py:30-35" in out
+              and "ui.high: big.py:50-55 -> big.py:55-60 not moved" in out, out[-1500:])
         rc, out = run(t49, "--check")
         check("a re-aimed range is held against today's side of the diff alone: "
               "the proof's line 32 is not today's",
@@ -1920,9 +1935,12 @@ def main():
         rc, out = run(t50, "--check")
         check("RED: a range whose inside changed before its proof fails as moved, "
               "naming where it is now", rc == 1 and "big.py:25-35" in out, out[-2000:])
+        # Until 1.4.5 this asserted that ui.late's move stayed unsaid; the
+        # drift is now named beside the stale proof and NOT re-aimed (case 60).
         check("...while one whose inside changed after its proof stays stale "
-              "proof, never a move", "ui.late: verified @" in out
-              and "big.py:45-50" not in out, out[-2000:])
+              "proof, its move named beside it and not made",
+              "ui.late: verified @" in out and "big.py:40-45 (written @" in out
+              and "-> big.py:45-50 NOT re-aimed" in out, out[-2000:])
         rc, out = run(t50, "--reaim")
         with open(mp50, encoding="utf-8") as fh:
             m50 = fh.read()
@@ -2048,6 +2066,337 @@ def main():
                   rc == 0 and len(posts53) == n, out[-1500:])
         finally:
             srv53.shutdown()
+
+        # ------------------------------ 54 two captures in one second both stay
+        # The pack's reviewer (2026-09-30) recorded twice inside one second and
+        # found one dated file: the name was taken to the second, so the later
+        # capture replaced the earlier one, and its analysis compared against a
+        # proof that no longer existed.
+        print("\n54. two captures inside one second are two files")
+        t54 = os.path.join(tmp, "fiftyfour")
+        os.makedirs(t54)
+        fixture(t54)
+        run(t54, "--init")
+        pd54 = os.path.join(t54, ".verify", "proof", "endpoint.health")
+        ats, outs = [], []
+        for _attempt in range(8):
+            # a record takes ~250 ms here: start just past a second boundary so
+            # both land in the same one, and read back which second each got
+            time.sleep(1.0 - (time.time() % 1.0))
+            for _ in range(2):
+                rc, out = run(t54, "--record", "--feature", "endpoint.health",
+                              "--grade", "TESTED", "--result", "fail",
+                              "--observable", "GET /health 500")
+                outs.append(out)
+                try:
+                    with open(os.path.join(pd54, "latest.json"), encoding="utf-8") as fh:
+                        ats.append(json.load(fh).get("at"))
+                except (OSError, ValueError):
+                    ats.append(None)
+            if ats[-1] and ats[-1] == ats[-2]:
+                break
+        same = bool(ats[-1]) and ats[-1] == ats[-2]
+        stamp = (ats[-1] or "").replace("-", "").replace(":", "")
+        pair = sorted(f for f in os.listdir(pd54)
+                      if f != "latest.json" and f.startswith(stamp + "-"))
+        check("RED: two captures stamped in the same second leave two dated files",
+              same and len(pair) == 2,
+              "same second: %s; files for %s: %s" % (same, stamp, pair))
+        m54 = re.search(r"recorded (\S+)", outs[-1])
+        named = m54.group(1).replace("\\", "/").rsplit("/", 1)[-1] if m54 else None
+        check("...the second capture's file is the one it printed, and it sorts "
+              "after the first", same and len(pair) == 2 and named == pair[-1],
+              outs[-1][-600:] + "\n" + repr(pair))
+
+        # ------------------------------ 55 the template's face hint is not a face
+        # The pack's reviewer (2026-09-30): --list on a map fresh from --init
+        # printed "user · dev — only to overrule the derived face, with the
+        # reason 1" as a bucket, because the example entry's face: line is the
+        # template's hint, and an authored face was taken as written.
+        print("\n55. --list on a fresh map: the example's face hint is not a bucket")
+        t55 = os.path.join(tmp, "fiftyfive")
+        os.makedirs(t55)
+        fixture(t55)
+        run(t55, "--init")
+        rc, out = run(t55, "--list")
+        head55 = out.split("\n", 1)[0]
+        buckets = [b.rsplit(" ", 1)[0] for b in head55.split(" - ", 1)[-1].split(", ")]
+        check("RED: every bucket in the header is a face",
+              rc == 0 and buckets and set(buckets) <= {"user", "dev", "unclassified"},
+              head55)
+        check("...and the example entry, mapped by hand, sits in unclassified",
+              re.search(r"^\s+unclassified\s+example\.id\b", out, re.M), out[-1500:])
+        author(t55, "### endpoint.orders\n\n- name: orders\n- surface: api\n"
+               "- face: user — the checkout page posts here\n- grade: UNKNOWN\n")
+        rc, out = run(t55, "--list", "--face", "user")
+        check("an authored face with its reason beside it still overrules",
+              rc == 0 and "endpoint.orders" in out and "user 1" in out, out[-1500:])
+
+        # ------------------------------ 56 a move that rewrites nothing is no move
+        # KiT, 2026-09-30 (K92.1): tools/publish_release.ps1:1, written at one
+        # commit; the script's header grew around line 1 and the proof was taken
+        # after. Carried through the proof the line widened to 1-8, a one-line
+        # pointer prints only its start, so --check said ":1 -> :1", --reaim
+        # wrote :1 over :1, blame still named the old commit, and it looped.
+        print("\n56. a one-line pointer carried to its own line is not moved, and --reaim settles")
+        t56 = os.path.join(tmp, "fiftysix")
+        os.makedirs(t56)
+        l56 = ["# line %d" % i for i in range(1, 41)]
+        put(t56, "tool.py", "\n".join(l56) + "\n")
+        put(t56, "app.py", APP_V1)
+        git(t56, "init", "-q")
+        commit(t56, "baseline")
+        run(t56, "--init")
+        author(t56, base39 + ENTRY % ("dev.tool", "tool", "cli", "tool.py:1",
+                                      "DRIVEN", "2001-01-01"))
+        commit(t56, "map written")
+        put(t56, "tool.py", "# header v2\n# updated a\n# updated b\n# updated c\n"
+            + "\n".join(l56[1:]) + "\n")
+        commit(t56, "the header grows around line 1")
+        mp56 = os.path.join(t56, "FEATURE-MAP.md")
+        with open(mp56, encoding="utf-8") as fh:
+            m56 = fh.read()
+        with open(mp56, "w", encoding="utf-8", newline="") as fh:
+            fh.write(m56.replace("- verified_at: 2001-01-01", "- verified_at: %s @ %s"
+                                 % (datetime.date.today(), head(t56))))
+        commit(t56, "dev.tool proved on the grown header")
+        rc, out = run(t56, "--check")
+        check("RED: --check reports no move from tool.py:1 to tool.py:1, and passes",
+              rc == 0 and not re.search(r"tool\.py:1 \(written[^\n]*-> tool\.py:1\s*$", out, re.M),
+              out[-1500:])
+        run(t56, "--reaim")
+        rc, out = run(t56, "--reaim")
+        check("...and a second --reaim finds nothing to move", rc == 0
+              and "no code range has moved" in out, out[-800:])
+
+        # ------------------------------ 57 a label where a commit belongs
+        # KiT, 2026-09-30: verified_at "2026-09-29 @ K82.1" names a work label,
+        # not a commit, so --check reads it by day and by whole file - any change
+        # to the file on a later day stales it, and one later that day is missed.
+        # --record knows the commit it captured at; it says what to write.
+        print("\n57. --record says the verified_at to write, and warns on a label")
+        t57 = os.path.join(tmp, "fiftyseven")
+        os.makedirs(t57)
+        fixture(t57)
+        run(t57, "--init")
+        author(t57, base39 + ENTRY % ("dev.lab", "lab", "cli", "app.py:4",
+                                      "DRIVEN", "2026-09-29 @ K82.1"))
+        commit(t57, "map with a label")
+        rc, out = run(t57, "--record", "--feature", "dev.lab", "--grade", "DRIVEN",
+                      "--result", "pass", "--observable", "a value read back", "--how", "ran it")
+        want57 = "%s @ %s" % (datetime.date.today(), head(t57)[:7])
+        check("RED: a passing capture names the verified_at to write, with its commit",
+              rc == 0 and want57 in out, out[-800:])
+        check("...and warns that the label it replaces is read by day only",
+              "K82.1" in out and "by day" in out, out[-800:])
+
+        # ------------------------------ 58 a re-aimed range left uncommitted
+        # A static site, 2026-09-30: --reaim moved nine ranges at one commit,
+        # the map stayed uncommitted while a later commit added a line above
+        # them, and nothing read them again - blame said zeros, and a line
+        # blame cannot place was taken to be in today's lines. Nine pointers
+        # one short, and --check PASS. Now --reaim stamps each range it moves
+        # with the commit whose lines it is in (`@ <commit>`), read before
+        # blame; a hand-written, uncommitted, unstamped pointer is still read
+        # in today's lines, and the PASS says so when its file has moved on.
+        print("\n58. a range re-aimed and left uncommitted is still read in its own commit's lines")
+        t58 = os.path.join(tmp, "fiftyeight")
+        os.makedirs(t58)
+        l58 = ["# line %d" % i for i in range(1, 61)]
+        put(t58, "big.py", "\n".join(l58) + "\n")
+        put(t58, "app.py", APP_V1)
+        git(t58, "init", "-q")
+        commit(t58, "baseline")
+        run(t58, "--init")
+        author(t58, base39 + ENTRY % ("ui.span", "span", "web-ui", "big.py:20-25",
+                                      "DRIVEN", "%s @ %s"
+                                      % (datetime.date.today(), head(t58))))
+        commit(t58, "map written against these lines")
+        put(t58, "big.py", "# new 1\n# new 2\n# new 3\n" + "\n".join(l58) + "\n")
+        commit(t58, "three lines above")
+        at3 = head(t58)
+        rc, out = run(t58, "--reaim")
+        mp58 = os.path.join(t58, "FEATURE-MAP.md")
+        with open(mp58, encoding="utf-8") as fh:
+            m58 = fh.read()
+        check("RED: --reaim stamps the range it moves with the commit whose lines it is in",
+              rc == 0 and "big.py:23-28 @ %s" % at3 in m58,
+              out[-1500:] + "\n" + m58[-1200:])
+        # The map stays uncommitted; one more line lands above, code only.
+        put(t58, "big.py", "# new 0\n# new 1\n# new 2\n# new 3\n" + "\n".join(l58) + "\n")
+        commit_only(t58, "one more line above, the map not committed", "big.py")
+        rc, out = run(t58, "--check")
+        check("RED: the uncommitted, stamped range is read in its stamp's lines: "
+              "one short, named", rc == 1 and "ui.span: big.py:23-28 (written @ %s) "
+              "-> big.py:24-29" % at3 in out, out[-2000:])
+        rc, out = run(t58, "--reaim")
+        with open(mp58, encoding="utf-8") as fh:
+            m58 = fh.read()
+        check("--reaim moves it on, re-stamped",
+              "big.py:24-29 @ %s" % head(t58) in m58, out[-1500:])
+        rc, out = run(t58, "--check")
+        check("...and --check passes", rc == 0, out[-1500:])
+        # The normal flow: a pointer written by hand against today's lines,
+        # after commits touched its file, passes - and the PASS says the bound.
+        with open(mp58, "w", encoding="utf-8", newline="") as fh:
+            fh.write(m58.replace("<!-- AUTHORED:END -->", ENTRY % (
+                "ui.hand", "hand", "web-ui", "big.py:44-46", "UNKNOWN", "")
+                + "<!-- AUTHORED:END -->"))
+        rc, out = run(t58, "--check")
+        check("a hand-written, uncommitted pointer is read in today's lines and passes",
+              rc == 0, out[-1500:])
+        tail58 = out.split("PASS")[-1]
+        check("...and the PASS names that bound, its file having changed since the "
+              "map's last commit", "today's lines" in tail58 and "big.py" in tail58,
+              out[-1500:])
+        # A file with changes not in HEAD: --reaim moves, cannot stamp, says so.
+        put(t58, "big.py", "# new -1\n# new 0\n# new 1\n# new 2\n# new 3\n"
+            + "\n".join(l58) + "\n")
+        rc, out = run(t58, "--reaim")
+        with open(mp58, encoding="utf-8") as fh:
+            m58 = fh.read()
+        check("a range moved in a file with uncommitted changes carries no stamp, "
+              "and --reaim says so", "big.py:25-30\n" in m58
+              and "carry no `@ commit`" in out, out[-1500:] + "\n" + m58[-1500:])
+        commit(t58, "file and map together")
+        rc, out = run(t58, "--check")
+        check("...committed together, it is read by blame and passes", rc == 0,
+              out[-1500:])
+
+        # ------------------------------ 59 every pointer in a field is read
+        # A static site, 2026-09-30: `code: A:99-103; its mark B:403-436`,
+        # `code: B:263-285; its order B:71; its figures C:201-241`, and an
+        # `entry:` holding `its slot is B:310-312` were never re-aimed or
+        # checked - the old pattern read one pointer, at the end of a `code:`
+        # line. Four pointers sat four lines short under a PASS, and a bare
+        # `BaseLayout.astro:138` in an entry named no file at all.
+        print("\n59. every path:N pointer in a code: or entry: field is read, and one naming no file is named")
+        t59 = os.path.join(tmp, "fiftynine")
+        os.makedirs(t59)
+        l59 = ["# line %d" % i for i in range(1, 61)]
+        o59 = ["# other %d" % i for i in range(1, 41)]
+        put(t59, "big.py", "\n".join(l59) + "\n")
+        put(t59, "other.py", "\n".join(o59) + "\n")
+        put(t59, "app.py", APP_V1)
+        git(t59, "init", "-q")
+        commit(t59, "baseline")
+        run(t59, "--init")
+        vat = "%s @ %s" % (datetime.date.today(), head(t59))
+        multi = ("### ui.multi\n\n- name: multi\n- surface: web-ui\n"
+                 "- code: other.py:5-8; its mark big.py:20-25\n"
+                 "- entry: / (its slot is big.py:40-42, framed by other.py:30)\n"
+                 "- does: a fixture feature\n- observable: a value read back\n"
+                 "- grade: DRIVEN\n- verified_at: %s\n\n" % vat)
+        bare = ("### ui.bare\n\n- name: bare\n- surface: web-ui\n- code: big.py:50\n"
+                "- entry: the footer, under its links (Layout.astro:138)\n"
+                "- does: a fixture feature\n- observable: a value read back\n"
+                "- grade: UNKNOWN\n- verified_at: \n\n")
+        author(t59, base39 + multi + bare)
+        commit(t59, "map written against these lines")
+        put(t59, "big.py", "# new 1\n# new 2\n# new 3\n" + "\n".join(l59) + "\n")
+        put(t59, "other.py", "# new a\n# new b\n" + "\n".join(o59) + "\n")
+        commit(t59, "lines added above every range in both files")
+        rc, out = run(t59, "--check")
+        check("RED: both pointers of a code: field, and both inside an entry: "
+              "field, are named as moved",
+              rc == 1 and "other.py:5-8 (written @" in out and "-> other.py:7-10" in out
+              and "big.py:20-25 (written @" in out and "-> big.py:23-28" in out
+              and "big.py:40-42 (written @" in out and "-> big.py:43-45" in out
+              and "other.py:30 (written @" in out and "-> other.py:32" in out,
+              out[-2500:])
+        check("RED: a pointer-shaped string naming no file is reported, never skipped",
+              "Layout.astro:138" in out and "no such file" in out, out[-2500:])
+        rc, out = run(t59, "--reaim")
+        mp59 = os.path.join(t59, "FEATURE-MAP.md")
+        with open(mp59, encoding="utf-8") as fh:
+            m59 = fh.read()
+        check("--reaim moves all four in place and keeps the prose around them",
+              rc == 0 and re.search(r"- code: other\.py:7-10 @ \w+; its mark "
+                                    r"big\.py:23-28 @ \w+\n", m59)
+              and re.search(r"- entry: / \(its slot is big\.py:43-45 @ \w+, framed "
+                            r"by other\.py:32 @ \w+\)\n", m59)
+              and "big.py:53 @" in m59, out[-1500:] + "\n" + m59[-2000:])
+        # A change inside the second pointer's range stales the proof, and the
+        # stale line names that pointer's file and region, not the first's.
+        l59[22] = "# changed 23"
+        put(t59, "big.py", "# new 1\n# new 2\n# new 3\n" + "\n".join(l59) + "\n")
+        rc, out = run(t59, "--check")
+        st59 = [x for x in out.split("\n") if "ui.multi: verified @" in x]
+        check("RED: a change inside a code: field's second pointer stales its proof, "
+              "named by its own file and region",
+              rc == 1 and st59 and "big.py changed" in st59[0] and "23 at " in st59[0]
+              and "26 now" in st59[0] and "region 20-25 at" in st59[0]
+              and "other.py" not in st59[0], out[-2500:])
+        with open(mp59, "w", encoding="utf-8", newline="") as fh:
+            fh.write(m59.replace("(Layout.astro:138)", "(other.py:1)"))
+        put(t59, "big.py", "# new 1\n# new 2\n# new 3\n"
+            + "\n".join("# line %d" % i for i in range(1, 61)) + "\n")
+        rc, out = run(t59, "--check")
+        check("with the bare name made a path and the change undone, --check passes",
+              rc == 0, out[-1500:])
+
+        # ------------------------------ 60 a move --reaim declines is named
+        # A static site, 2026-09-30: ui.vista's orb-shader.ts:229-1720 gained
+        # a header line above and a comment change inside at 55ba888. --reaim
+        # rightly left it - the change postdates its proof - but printed "no
+        # code range has moved", and --check showed the stale proof alone: the
+        # drift sat hidden until a hand fix. Now both name it.
+        print("\n60. a range moved AND changed inside: --reaim names what it declines, --check the drift beside the stale proof")
+        t60 = os.path.join(tmp, "sixty")
+        os.makedirs(t60)
+        l60 = ["# line %d" % i for i in range(1, 61)]
+        put(t60, "big.py", "\n".join(l60) + "\n")
+        put(t60, "app.py", APP_V1)
+        git(t60, "init", "-q")
+        commit(t60, "baseline")
+        base60 = head(t60)
+        run(t60, "--init")
+        author(t60, base39 + ENTRY % ("ui.vista", "vista", "web-ui", "big.py:20-30",
+                                      "DRIVEN", "%s @ %s"
+                                      % (datetime.date.today(), base60))
+               + ENTRY % ("ui.raw", "raw", "web-ui", "big.py:40-45", "UNKNOWN", ""))
+        commit(t60, "map written")
+        wrote60 = head(t60)
+        l60[24], l60[41] = "# changed 25", "# changed 42"
+        put(t60, "big.py", "# header\n" + "\n".join(l60) + "\n")
+        commit(t60, "one line above, one changed inside each")
+        rc, out = run(t60, "--reaim")
+        check("RED: --reaim names the range it declines, where it sits now, and why",
+              rc == 0 and "ui.vista: big.py:20-30 -> big.py:21-31 not moved: a change "
+              "inside it postdates its proof @ %s" % base60 in out
+              and "no code range has moved" not in out, out[-1500:])
+        check("...and one with no proof to carry it, by that reason",
+              "ui.raw: big.py:40-45 -> big.py:41-46 not moved: a change inside it, "
+              "and no DRIVEN or TESTED proof" in out, out[-1500:])
+        mp60 = os.path.join(t60, "FEATURE-MAP.md")
+        with open(mp60, encoding="utf-8") as fh:
+            m60 = fh.read()
+        check("...and writes neither", "big.py:20-30\n" in m60
+              and "big.py:40-45\n" in m60, m60[-1500:])
+        rc, out = run(t60, "--check")
+        st60 = [x for x in out.split("\n") if "ui.vista: verified @" in x]
+        check("RED: --check reports the drift beside the stale proof, not instead of it",
+              rc == 1 and st60 and "25 at " in st60[0] and "-> big.py:21-31" in st60[0]
+              and "not re-aimed" in st60[0], out[-2500:])
+        check("RED: an ungraded range with a change inside is named as moved and "
+              "not re-aimed", "ui.raw: big.py:40-45 (written @ %s) -> big.py:41-46 "
+              "NOT re-aimed" % wrote60 in out, out[-2500:])
+        # Re-driven, the proof covers the change and --reaim carries it.
+        with open(mp60, "w", encoding="utf-8", newline="") as fh:
+            fh.write(m60.replace("- verified_at: %s @ %s" % (datetime.date.today(), base60),
+                                 "- verified_at: %s @ %s"
+                                 % (datetime.date.today(), head(t60))))
+        rc, out = run(t60, "--reaim")
+        with open(mp60, encoding="utf-8") as fh:
+            m60 = fh.read()
+        check("re-driven, --reaim carries it through the new proof and still names ui.raw",
+              "big.py:21-31" in m60
+              and re.search(r"ui\.vista: big\.py:20-30 -> big\.py:21-31\s*$", out, re.M)
+              and "ui.raw: big.py:40-45 -> big.py:41-46 not moved" in out, out[-1500:])
+        with open(mp60, "w", encoding="utf-8", newline="") as fh:
+            fh.write(m60.replace("big.py:40-45", "big.py:41-46"))
+        rc, out = run(t60, "--check")
+        check("set by hand, the ungraded range passes", rc == 0, out[-1500:])
 
     finally:
         _remove(tmp)

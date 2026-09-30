@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
+# The strings below are fixtures Mutate reads as data, not things this file does:
+# mutate: fixture
 """search_selftest.py - the cases search.py must not regress on.
 
-Version 1.0 | Deps: Python 3 standard library only | Parent: levjev skill 1.0.0 (search.py) |
+Version 1.0 | Deps: Python 3 standard library only | Parent: levjev skill 1.0.3 (search.py) |
 Path: scripts | Filename: search_selftest.py | Created: 2026-09-29 10:48 ET
 
 Run:  python -B scripts/search_selftest.py       (exit 0 = all green)
@@ -312,6 +314,25 @@ def main():
         rc, out = run(Q, repo, "--cache-dir", fresh)
         check("...and a failure is never cached: the rerun asks that chunk again",
               len(posts) == n + 1 and "RESULT complete" in out, out)
+
+        # ------------------------------------------------ 5 what a search could not see
+        # A web app's first use (2026-09-29): the 200 KB cap skipped app.py and
+        # its main JSX file, the heart of the codebase, and the plan said only
+        # "over size cap 2"; and docs filled the top of the results.
+        print("\n5. the plan names each file skipped by size, and the top says when docs fill it")
+        rc, out = run("files", repo, env=nokey)
+        check("files names big.txt with its size and the flag that reads it, without --show-skipped",
+              rc == 0 and re.search(r"over size cap: big\.txt \(\d+ KB\)", out)
+              and "--max-file-bytes" in out, out)
+        docs = os.path.join(tmp, "docs")
+        for k in range(3):
+            put(os.path.join(docs, "guide%d.md" % k), "# Guide %d\n\nsession RELEVANT notes\n" % k)
+        put(os.path.join(docs, "src", "session.py"), "def open_session():  # MAYBE\n    return 1\n")
+        rc, out = run(Q, docs, "--no-cache", "--top", "3")
+        check("a top that is all Markdown says --exclude '*.md' searches the code alone",
+              rc == 0 and "--exclude '*.md'" in out, out)
+        rc, out = run(Q, repo, "--no-cache")
+        check("...and a top led by code says nothing of the kind", rc == 0 and "--exclude '*.md'" not in out, out)
     finally:
         srv.shutdown()
         shutil.rmtree(tmp, ignore_errors=True)

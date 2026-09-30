@@ -10,7 +10,7 @@ from the map alone, without reading the source first.
 | Half | Who writes it | `--write` behaviour |
 |---|---|---|
 | **DERIVED** | `featuremap.py`, from routes, handlers, JSX, CLI definitions, the rendered DOM | overwritten on every `--write` |
-| **AUTHORED** | a human or an agent exercising judgment | **never** touched by any script, beyond `--reaim` moving a `code:` range's numbers to where git measures its unchanged lines now |
+| **AUTHORED** | a human or an agent exercising judgment | **never** touched by any script, beyond `--reaim` moving a `code:` or `entry:` pointer's numbers to where git measures its unchanged lines now, stamped ` @ <commit>` with the commit those lines are in |
 
 They are separated by explicit markers in the file so the generator can never eat
 the judgment. A map that mixes them loses the authored half the first time someone
@@ -25,14 +25,14 @@ regenerates it, which is the one failure that makes people stop keeping maps.
 | `id` | stable slug, e.g. `checkout.submit` | proof records and drift reports reference features across renames |
 | `name` | what a user would call it | the operator asks "does it have X" in their words, not the function's name |
 | `surface` | `web-ui` · `setting` · `cli` · `api` · `job` · `data` · `auth` | the verification method differs per surface; picking the wrong one is how a setting gets "verified" by watching it save |
-| `code` | `path:line` of the thing that decides, or `path:first-last` for its span | so the next agent changes the right place, and so staleness is measured on that region alone: a change within 30 lines of a single line, or inside a declared span, stales the proof; a change elsewhere in the same file does not. The numbers are read in the lines of the commit that last wrote that map line (git blame), and `--check` fails when code added or removed above them has moved those lines; `--reaim` moves them. A change is held against the side of the diff those numbers are in: today's lines when the file has not changed since that map line was written (a range `--reaim` just moved, for one), otherwise the range carried into the proof commit's lines. Only where git cannot blame the map are both sides tried, and then a range can meet the other side's code by number. A range with a change inside it is moved only when its DRIVEN or TESTED proof names a later commit, which covers that change: it is carried through the proof's lines to today's |
+| `code` | `path:line` of the thing that decides, or `path:first-last` for its span | so the next agent changes the right place, and so staleness is measured on that region alone: a change within 30 lines of a single line, or inside a declared span, stales the proof; a change elsewhere in the same file does not. The numbers are read in the lines of the commit that last wrote that map line (git blame), and `--check` fails when code added or removed above them has moved those lines; `--reaim` moves them. A change is held against the side of the diff those numbers are in: today's lines when the file has not changed since that map line was written (a range `--reaim` just moved, for one), otherwise the range carried into the proof commit's lines. Only where git cannot blame the map are both sides tried, and then a range can meet the other side's code by number. A range with a change inside it is moved only when its DRIVEN or TESTED proof names a later commit, which covers that change: it is carried through the proof's lines to today's. A move is reported only when it changes the pointer's text: a one-line pointer carried to a region that starts on its own line stays as written (1.4.3, KiT's line-1 loop). A field may hold several pointers, alone or in prose (`A:99-103; its mark B:403-436`), and each is read on its own - moved, checked and staled by its own file. A pointer may carry ` @ <commit>`, the commit whose lines its numbers are in: `--reaim` writes it on each range it moves while the file is clean at HEAD, and it is read before blame, so a re-aimed map left uncommitted is still read in its own commit's lines; a hand edit of the numbers drops the stamp or sets it to the commit the new numbers are in. A pointer neither committed nor stamped is read in today's lines, and the PASS says so by name when its file has changed since the map's last commit. A range that moved with a change inside it that no proof covers stays where it is and is named - by `--reaim` as not moved, with why, and by `--check` beside its stale proof and as NOT re-aimed. A pointer-shaped string naming no file under the project (`BaseLayout.astro:138`, no folder) fails `--check` by name (1.4.5, a static site) |
 | `status` | `live` · `hidden` · `flagged` · `dead` | a feature behind a flag verified in the on state is not verified for users |
 
 ### Reach — how the user gets there — AUTHORED, DOM parts DERIVED
 
 | Field | Answers | Why it exists |
 |---|---|---|
-| `entry` | the URL, command, endpoint or event that starts it | "how does the user reach it" |
+| `entry` | the URL, command, endpoint or event that starts it | "how does the user reach it". A `path:line` pointer inside it (`its slot is src/pages/index.astro:310-312`) is read like one in `code:` - re-aimed and checked for movement, and named when it resolves to no file - but never stales the proof (1.4.5) |
 | `path` | the ordered steps from a cold start to the feature being usable | a feature reachable only from state you forgot to set up reads as broken |
 | `operate` | exactly how it is worked: click, type, drag, keyboard | their question — click *or* keyboard, and they fail independently |
 | `keys` | every keyboard shortcut, and whether it is global or scoped | a shortcut that works only while an input is unfocused is a different feature. Derived shortcuts arrive as `key.<modifiers>-<keys>` with their scope in the found-as column |
@@ -55,7 +55,7 @@ regenerates it, which is the one failure that makes people stop keeping maps.
 |---|---|---|
 | `grade` | `DRIVEN` · `TESTED` · `ASSERTED` · `UNKNOWN` | conflating a read-through with a driven run is how "fully verified" gets claimed over untested code |
 | `proof` | pointer into the proof store | a grade with no artifact is an opinion |
-| `verified_at` | `date @ commit` | the commit is what staleness is measured from: any change to the feature's region since then, committed or not, stales the proof. With no commit git can resolve, it is measured by day only, and `--check` says so by name |
+| `verified_at` | `date @ commit` | the commit is what staleness is measured from: any change to the feature's region since then, committed or not, stales the proof. With no commit git can resolve, it is measured by day only, and `--check` says so by name. A passing DRIVEN or TESTED `--record` prints the value to write, `date @ commit` of the capture, and warns when the entry holds a work label (K82.1) instead (1.4.3) |
 | `bound` | what the verification did **not** cover | an unbounded pass claim is the defect |
 
 ## Derived ids
@@ -102,7 +102,9 @@ user's face and the development face.
 | `unclassified` | an endpoint whose path has no fixed part to search for (`/<id>`) | guessing would put it on the wrong face half the time |
 
 A test file is never counted as a client. An authored `- face: user` or `- face: dev`
-overrules the derived face in `--list` and `--compare`; write the reason beside it.
+overrules the derived face in `--list` and `--compare`; write the reason beside it,
+after a dash (`- face: dev — only tests reach it`). Any other value is not a face and
+the derived one stands, so the template's hint line never becomes a bucket.
 
 The dev face lists environment variables **by name only**. A value is never read,
 printed or stored: the value of a key is the secret, and a map is a tracked file. A

@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
+# The strings below are fixtures Mutate reads as data, not things this file does:
+# mutate: fixture
 """selftest.py - the cases jev.py must not regress on.
 
-Version 1.0 | Deps: Python 3 standard library only | Parent: levjev skill 1.0.0 (formerly jev) |
-Path: scripts | Filename: selftest.py | Created: 2026-09-24 07:58 ET
+Version 1.0 | Deps: Python 3 standard library only | Parent: levjev skill 1.0.3 (formerly jev) |
+Path: scripts | Filename: selftest.py | Created: 2026-09-24 07:58 ET |
+Updated: 2026-09-30 04:22 ET — the header names levjev 1.0.2 (the pack's review); the
+file carries Verafox's mutate: fixture pragma, so a Mutate read lists its fixture
+strings apart instead of flagging them
 
 Run:  python scripts/selftest.py       (exit 0 = all green)
 

@@ -1,8 +1,8 @@
 ---
 name: measure-in-the-browser
-description: Discipline for verifying visual work (layout, color, contrast, typography, hover placement, theme toggles) by measuring the rendered page instead of reading the stylesheet or judging a screenshot by eye. Use whenever a UI change is about to be reported as done, whenever a screenshot looks wrong or blank, whenever a flex or grid rule seems ignored, whenever a contrast or accessibility floor is claimed, and before a third attempt at any color solve. Derived 2026-09-15 from seventy review rounds on a web app; every rule below cost at least one pass.
+description: Discipline for verifying visual work (layout, color, contrast, typography, hover placement, theme toggles, and a page's first load frame by frame) by measuring the rendered page instead of reading the stylesheet or judging a screenshot by eye. Use whenever a UI change is about to be reported as done, whenever a screenshot looks wrong or blank, whenever a flex or grid rule seems ignored, whenever a contrast or accessibility floor is claimed, before a third attempt at any color solve, and to play-test any change to what a page's load paints (a flash, a stand-in, a font swap, an empty slot on a first visit). Derived 2026-09-15 from seventy review rounds on a web app; every rule below cost at least one pass.
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   source: derived from the review records of a web app and KiT (2026-09)
   owner: SPRIC76
 ---
@@ -27,11 +27,14 @@ the round is about the occluder.
   desktop Browser pane a screenshot taken after scrolling comes back black or as a
   stale frame; zoom-to-region is unsupported. For a picture of something lower on
   the page, hide the elements above it (`style.display='none'`), shoot at scroll 0,
-  then reload.
+  then reload. A load under test is the exception: its frames are the evidence
+  (First frames, below).
 - **Settle before reading.** A theme flip or class change can start hundreds of
   transitions; a mid-transition computed value is a real value and looks like
   evidence. Run `document.getAnimations().forEach(a => a.finish())` first and
   report the count with the reading. A hidden pane may not advance animations at all.
+  When the load itself is under test, do not settle: settling hides the very frames
+  in question (First frames, below).
 - **Read at the reader's width.** Placement rules that depend on free margin
   (tooltips into the gutter) are invisible at the pane's natural width and at a
   1600 "desktop". Emulate 1920x1080 before calling a placement wrong. Synthetic
@@ -48,6 +51,48 @@ the round is about the occluder.
   padding and borders as lines: a one-line strip with 6.4 px padding read as two
   (KiT, 2026-09-28). Select the element's contents with a `Range` and count the
   distinct `top`s of its client rects.
+
+## First frames: play-test the load
+
+A settled page proves where the load ends, not the way there. A cold first visit
+shows whatever paints before the scripts, fonts, textures and shaders arrive: a
+stand-in, a fallback font, an empty slot, two layers crossing. A reading taken
+after load never sees any of it (a site's landing page, 2026-09-30: a flat placeholder
+sphere sat in the hero for 2.4 s of every first visit while every settled check
+passed). Play-test every iteration that touches what a load paints.
+
+- **Film every painted frame of a cold load.** A fresh browser profile per run
+  (empty cache, shaders never compiled); Chrome's screencast
+  (`Page.startScreencast`) from before the first paint to a second after the last
+  layer arrives; each frame read beside the page's own state at that moment,
+  logged every animation frame by a script that runs before the page's own
+  (`Page.addScriptToEvaluateOnNewDocument`). Screenshots on a timer miss the
+  frames that matter.
+- **Write the failure as a rule on the frames, then prove it red on what is
+  live.** Name what must never show (a stand-in before the real thing, anything
+  painted over it once it draws, an ornament before the words, a last frame that
+  is not the finished page) and run the rule on production's build first: a
+  check that production passes has not seen the defect.
+- **Stress the load, not only the page.** Every width the page answers to (375,
+  768, 1440, 1920); unthrottled, Fast 4G, Slow 4G, 4x and 6x CPU, and a slow
+  network with a slow CPU; reduced motion; fonts held back; the feature missing
+  (no WebGL, no script, a lost context); a resize mid-load; a tab opened in the
+  background; reloads in quick succession; a repeat visit.
+- **Prove each condition can fail.** A background tab was once filmed as the
+  whole window with the page in a corner, and a detector reading at the page's
+  scale passed it; production must fail in every condition the check claims.
+- **Compare a substitute with the real render by number.** A poster or fallback
+  image is measured against the scene's own render at the same size (mean
+  grey-level difference, with the bar stated), not approved by eye.
+- **Look at the frames yourself.** Here the pixels are the evidence, read by
+  number and by eye; the DOM says what was meant to paint. Keep a filmstrip (a
+  cell every 100-200 ms, its times listed) and the first, failing and last
+  frames; open them and say what a visitor sees at each time beside the
+  numbers. A font that swaps a second in, or half a phone screen left empty, is
+  a finding even when every rule passes.
+
+Report each run's width and condition, when the words and the real first frame
+painted, and pass or fail for the change and for production.
 
 ## Contrast and color
 

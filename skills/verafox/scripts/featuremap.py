@@ -6,8 +6,10 @@ WHAT IT DOES
     --check     report drift and stale proof. Exits 1 when either is found, so a
                 hook or a CI step can refuse on it. Reports, never repairs.
     --write     regenerate ONLY the DERIVED block of the map from the code.
-    --reaim     move each hand-mapped `code:` range whose lines moved (code
-                added or removed above it) to where those lines are now.
+    --reaim     move each hand-mapped `code:` or `entry:` range whose lines
+                moved (code added or removed above it) to where those lines
+                are now, stamped `@ <commit>` - the commit whose lines it is
+                in - and name each range it leaves, with why.
     --record    append one capture record to the proof store and print the
                 analysis against the previous capture for that feature.
     --ratchet   lower every recorded ceiling to the count present. Never raises.
@@ -27,8 +29,9 @@ WHAT IT DOES
                 beside this one, and TYPESAFE_API_KEY.
 
 WHAT IT WILL NEVER DO
-    Touch the AUTHORED half of a map, beyond --reaim moving a `code:` range's
-    numbers to where git measures its unchanged lines now - the judgment fields (what a feature is for,
+    Touch the AUTHORED half of a map, beyond --reaim moving a `code:` or
+    `entry:` pointer's numbers to where git measures its unchanged lines now,
+    stamped with the commit they are in - the judgment fields (what a feature is for,
     its observable, its negative contract, the operator's intent, the evidence
     grade) are written by a human or by an agent exercising judgment, and a
     generator that can overwrite them is the reason people stop keeping maps.
@@ -45,6 +48,7 @@ USAGE
         --metric duration_ms=812 --metric console_errors=0
 """
 import argparse
+import collections
 import json
 import os
 import re
@@ -1657,16 +1661,12 @@ def _successor(fid, entry, feats, authored_ids):
 REGION_LINES = 30
 
 
-def _region(code_field):
-    """`path:120` -> (90, 150); `path:120-180` -> (120, 180); no line -> None,
-    meaning the whole file is the region."""
-    m = re.search(r":(\d+)(?:\s*-\s*(\d+))?\s*$", code_field)
-    if not m:
-        return None
-    a = int(m.group(1))
-    if m.group(2):
-        return a, max(a, int(m.group(2)))
-    return max(1, a - REGION_LINES), a + REGION_LINES
+def _span(ptr):
+    """The region a pointer names: `path:120-180` -> (120, 180); `path:120`
+    -> (90, 150), REGION_LINES either side of the one line."""
+    if ptr.dash:
+        return ptr.lo, ptr.hi
+    return max(1, ptr.lo - REGION_LINES), ptr.lo + REGION_LINES
 
 
 def _hunks(root, commit, path, to=None):
@@ -1714,19 +1714,32 @@ def _translate(hunks, lo, hi):
     return lo, max(lo, at(hi, True))
 
 
-_POINTER = re.compile(r"^(\s*-\s*code:\s*`?[^`\n]*?:)(\d+)(?:(\s*-\s*)(\d+))?(`?\s*)$")
+# A pointer is `path:N` or `path:N-M` inside a `code:` or `entry:` field - any
+# number of them in one field, alone or in prose - and it may carry
+# ` @ <commit>`, the commit whose lines its numbers are in. --reaim writes that
+# stamp on each range it moves while the file is clean at HEAD, and it is read
+# before git blame: nine ranges re-aimed at one commit and left uncommitted were
+# read in today's lines by blame alone, one short each, under a PASS, and four
+# pointers in prose or in an `entry:` were never read at all (a static site,
+# 2026-09-30). A host:port or a URL is not pointer-shaped; a bare file name that
+# resolves to nothing is, and --check names it.
+POINTER_FIELDS = ("code", "entry")
+_POINTER = re.compile(
+    r"(?<![\w./@:-])([\w.-]+(?:/[\w.-]+)*):(\d+)(?:(\s*-\s*)(\d+))?(`?)"
+    r"(?:\s*@\s*([0-9a-fA-F]{7,40})\b)?(?![\w/-])")
+_PATHLIKE = re.compile(r"/|\.[A-Za-z]\w*$")
+Ptr = collections.namedtuple(
+    "Ptr", "line fid field path lo hi dash tick stamp start end blame exists")
+Move = collections.namedtuple("Move", "ptr base via now reason")
 
 
-def _pointer_lines(root, mp, text):
-    """[(line_index, id, match, sha)] for every authored `code:` line that names
-    a line, `sha` being the commit that last wrote that map line (git blame) -
-    all zeros while the line is not committed, so already in the working tree's
-    lines. None when git cannot blame the map: the lines are then unknown."""
-    ok, out = git(root, "blame", "-l", "-s", "--", rel(root, mp))
-    if not ok:
-        return None
-    shas = [ln.split(" ", 1)[0].lstrip("^") for ln in out.split("\n")]
-    found, fid, inside = [], None, False
+def _scan_pointers(root, text):
+    """Every pointer in the authored half's `code:` and `entry:` fields, in
+    map order, blame not yet read (None). A field runs to the next `- key:` or
+    a blank line, as parse_map reads it, so a pointer on a wrapped line counts.
+    A token that is not pointer-shaped (localhost:3000) is left out; one that
+    is and names no file is kept with exists=False, for --check to name."""
+    found, fid, field, inside = [], None, None, False
     for i, ln in enumerate(text.split("\n")):
         if A_BEGIN in ln:
             inside = True
@@ -1734,22 +1747,84 @@ def _pointer_lines(root, mp, text):
             inside = False
         if not inside:
             continue
+        ln = ln.rstrip("\r")
         m = re.match(r"^###\s+`?([^`\s]+)", ln)
         if m:
-            fid = m.group(1)
+            fid, field = m.group(1), None
             continue
-        p = _POINTER.match(ln.rstrip("\r"))
-        if p and fid and i < len(shas):
-            found.append((i, fid, p, shas[i]))
+        m = re.match(r"^-\s*([a-z_]+)\s*:", ln)
+        if m:
+            field = m.group(1)
+        elif not (ln.strip() and ln[:1] in (" ", "\t")):
+            field = None
+        if not fid or field not in POINTER_FIELDS:
+            continue
+        for p in _POINTER.finditer(ln):
+            exists = os.path.exists(os.path.join(root, p.group(1)))
+            if not exists and not _PATHLIKE.search(p.group(1)):
+                continue
+            lo = int(p.group(2))
+            hi = int(p.group(4)) if p.group(4) else lo
+            found.append(Ptr(i, fid, field, p.group(1), lo, max(lo, hi),
+                             p.group(3), p.group(5), p.group(6), p.start(),
+                             p.end(), None, exists))
     return found
 
 
+def _pointers(root, mp, text):
+    """_scan_pointers, each with its blame: the commit that last wrote its map
+    line, None while that line is not committed. None when git cannot blame
+    the map - the lines are then unknown."""
+    ok, out = git(root, "blame", "-l", "-s", "--", rel(root, mp))
+    if not ok:
+        return None
+    shas = [ln.split(" ", 1)[0].lstrip("^") for ln in out.split("\n")]
+    found = []
+    for p in _scan_pointers(root, text):
+        sha = shas[p.line] if p.line < len(shas) else ""
+        found.append(p._replace(blame=sha if sha.strip("0") else None))
+    return found
+
+
+def _base(root, ptr, known):
+    """(commit, dangling): the commit whose lines a pointer's numbers are in -
+    its `@ commit` stamp when this repository has it, else the commit that
+    last wrote its map line, else None: not committed and unstamped, so read
+    in today's lines. `dangling` says the stamp named no commit here."""
+    if ptr.stamp:
+        if ptr.stamp not in known:
+            known[ptr.stamp] = git(root, "rev-parse", "--verify", "--quiet",
+                                   ptr.stamp + "^{commit}")[0]
+        if known[ptr.stamp]:
+            return ptr.stamp, False
+        return ptr.blame, True
+    return ptr.blame, False
+
+
+def _ptr_text(ptr, span=None, write=False):
+    """`path:lo-hi`, or `path:lo` for a one-line pointer, at `span` or as
+    written. For writing back, the separator is kept as the author spaced it."""
+    lo, hi = span or (ptr.lo, ptr.hi)
+    sep = (ptr.dash if write else "-") if ptr.dash else None
+    return "%s:%d%s" % (ptr.path, lo, "%s%d" % (sep, hi) if sep else "")
+
+
+def _said(mv, span):
+    """`fid: path:lo-hi -> path:lo'-hi'`, the printed form of a move."""
+    return "%s: %s -> %s" % (mv.ptr.fid, _ptr_text(mv.ptr), _ptr_text(mv.ptr, span))
+
+
 def _moved_pointers(root, mp, text):
-    """[(line_index, id, old_field, new_line)] for every authored `code:` range
-    whose lines moved since the commit that wrote that map line. The pointer is
-    read in the lines of the commit that last wrote it - git blame says which -
-    so a range re-aimed later is read in its own commit's lines, not the proof's.
-    A map line not yet committed is already in the working tree's lines."""
+    """(moved, declined, dangling, unplaced). `moved`: every pointer whose
+    lines moved since the commit its numbers are in (_base), where the code in
+    the range did not change since - or a later DRIVEN/TESTED proof covers the
+    change - so --reaim can carry it. `declined`: a range that moved with a
+    change inside it no proof covers, with git's best reading of where it sits
+    now and the reason it stays; unsaid, that drift hid behind the stale proof
+    (a static site's ui.vista, 2026-09-30). `dangling`: a stamp naming no
+    commit here, read by blame instead. `unplaced`: not committed and
+    unstamped, read in today's lines - right when written, wrong once HEAD
+    moves past commits touching the file, which --check says."""
     # A graded proof taken after the map line was written covers every change
     # made in between, so a change inside the range before the proof is no
     # reason to leave it pointing at the wrong lines: carry it through the
@@ -1759,36 +1834,84 @@ def _moved_pointers(root, mp, text):
         m = re.search(r"@\s*([0-9a-fA-F]{7,40})\b", f.get("verified_at", ""))
         if m and (f.get("grade") or "").strip().upper() in ("DRIVEN", "TESTED"):
             proofs[fid] = m.group(1)
-    moved, cache = [], {}
+    moved, declined, dangling, unplaced, cache, known = [], [], [], [], {}, {}
 
     def diff(*key):
         if key not in cache:
             cache[key] = _hunks(root, *key)
         return cache[key]
-    for i, fid, p, sha in _pointer_lines(root, mp, text) or []:
-        if not sha.strip("0"):
+    for ptr in _pointers(root, mp, text) or []:
+        if not ptr.exists:
             continue
-        lo = int(p.group(2))
-        hi = int(p.group(4)) if p.group(4) else lo
-        path = re.sub(r"^\s*-\s*code:\s*`?", "", p.group(1))[:-1].strip()
-        if not diff(sha, path):
+        base, lost = _base(root, ptr, known)
+        if lost:
+            dangling.append(ptr)
+        if base is None:
+            unplaced.append(ptr)
             continue
-        now, via = _carry(diff(sha, path), lo, hi), ""
-        proof = proofs.get(fid)
-        if now is None and proof and not sha.startswith(proof) and git(
-                root, "merge-base", "--is-ancestor", sha, proof)[0]:
-            between, after = diff(sha, path, proof), diff(proof, path)
-            if between is not None and after is not None:
-                now = _carry(after, *_translate(between, lo, hi))
-                via = ", carried through its proof @ %s, which covers the change " \
-                      "inside it" % proof
-        if now and now != (lo, hi):
-            new = p.group(1) + str(now[0]) + (
-                p.group(3) + str(now[1]) if p.group(4) else "") + p.group(5)
-            moved.append((i, fid, "%s:%s" % (path, "%d-%d" % (lo, hi) if p.group(4)
-                                             else lo),
-                          sha[:7] + via, new))
-    return moved
+        hunks = diff(base, ptr.path)
+        if not hunks:
+            continue
+        now, via, why = _carry(hunks, ptr.lo, ptr.hi), "", ""
+        proof = proofs.get(ptr.fid)
+        if now is None and proof:
+            why = "a change inside it postdates its proof @ %s" % proof
+            if not (base.startswith(proof) or proof.startswith(base)) and git(
+                    root, "merge-base", "--is-ancestor", base, proof)[0]:
+                between, after = diff(base, ptr.path, proof), diff(proof, ptr.path)
+                if between is not None and after is not None:
+                    now = _carry(after, *_translate(between, ptr.lo, ptr.hi))
+                    via = ", carried through its proof @ %s, which covers the " \
+                          "change inside it" % proof
+                else:
+                    why = "git could not carry it through its proof @ %s" % proof
+        elif now is None:
+            why = "a change inside it, and no DRIVEN or TESTED proof names a " \
+                  "commit that covers it"
+        if now is None:
+            best = _translate(hunks, ptr.lo, ptr.hi)
+            if _ptr_text(ptr, best) != _ptr_text(ptr):
+                declined.append(Move(ptr, base, "", best, why))
+            continue
+        # A one-line pointer prints only its start: carried to a region that
+        # starts on its own line, it would be "moved" to the text it already
+        # holds, forever - blame keeps naming the old commit (KiT, K92.1).
+        if _ptr_text(ptr, now) != _ptr_text(ptr):
+            moved.append(Move(ptr, base, via, now, ""))
+    return moved, declined, dangling, unplaced
+
+
+def _stamp(root, path, known):
+    """HEAD's short sha while `path` is the same in HEAD and the working tree:
+    HEAD's lines are then today's, and a range moved into them can say so.
+    None while the file carries changes not in HEAD - today's lines are in no
+    commit yet."""
+    if path not in known:
+        ok, sha = git(root, "rev-parse", "--short", "HEAD")
+        known[path] = sha.strip() if ok and _hunks(root, "HEAD", path) == [] \
+            else None
+    return known[path]
+
+
+def _rewrite(text, edits):
+    """The map with each (line, start, end, replacement) applied - right to
+    left within a line, so earlier spans keep their offsets; a CR is kept."""
+    lines, by_line = text.split("\n"), {}
+    for i, s, e, rep in edits:
+        by_line.setdefault(i, []).append((s, e, rep))
+    for i, reps in by_line.items():
+        cr = "\r" if lines[i].endswith("\r") else ""
+        ln = lines[i].rstrip("\r")
+        for s, e, rep in sorted(reps, reverse=True):
+            ln = ln[:s] + rep + ln[e:]
+        lines[i] = ln + cr
+    return "\n".join(lines)
+
+
+def _say_dangling(dangling):
+    for ptr in dangling:
+        print("NOTE %s: %s @ %s names no commit this repository has - read by "
+              "blame instead" % (ptr.fid, _ptr_text(ptr), ptr.stamp))
 
 
 def _lines(start, n, empty):
@@ -1818,26 +1941,51 @@ def _touches(hunk, span, side=None):
 
 
 def cmd_reaim(root, mp):
-    """Move each `code:` range whose lines moved to where they are now. Only the
-    numbers change, and only where no change fell inside the range: that is a
-    fact git measures, not a judgment, so it is the one edit this script makes
-    to the authored half."""
+    """Move each `code:` or `entry:` range whose lines moved to where they are
+    now, stamped `@ <commit>` - the commit whose lines it is in - while its
+    file is clean at HEAD. Only the numbers and that stamp change, and only
+    where no change fell inside the range that its proof does not cover: that
+    is a fact git measures, not a judgment, so it is the one edit this script
+    makes to the authored half. A range it leaves is named, with where git
+    reads it now and why it stays."""
     if not os.path.exists(mp):
         print("no %s - run --init first" % MAP_NAME)
         return 1
     text = read(mp)
-    moved = _moved_pointers(root, mp, text)
-    if not moved:
+    moved, declined, dangling, _ = _moved_pointers(root, mp, text)
+    _say_dangling(dangling)
+    if not moved and not declined:
         print("no code range has moved under its pointer")
         return 0
-    lines = text.split("\n")
-    for i, fid, old, sha, new in moved:
-        cr = "\r" if lines[i].endswith("\r") else ""
-        lines[i] = new + cr
-        print("  %s: %s -> %s" % (fid, old, re.sub(r"^\s*-\s*code:\s*`?|`?\s*$", "", new)))
-    write(mp, "\n".join(lines))
-    print("re-aimed %d code range(s); the proof on each still holds - the lines "
-          "moved, and the code in them did not change after its proof" % len(moved))
+    edits, known, unstamped = [], {}, []
+    for mv in moved:
+        stamp = _stamp(root, mv.ptr.path, known)
+        if not stamp and mv.ptr.path not in unstamped:
+            unstamped.append(mv.ptr.path)
+        edits.append((mv.ptr.line, mv.ptr.start, mv.ptr.end,
+                      _ptr_text(mv.ptr, mv.now, write=True) + mv.ptr.tick
+                      + (" @ %s" % stamp if stamp else "")))
+        print("  " + _said(mv, mv.now))
+    if moved:
+        write(mp, _rewrite(text, edits))
+    for mv in declined:
+        print("  %s not moved: %s; re-drive it, then --reaim"
+              % (_said(mv, mv.now), mv.reason))
+    for path in unstamped:
+        print("NOTE %s has changes not in HEAD, so the range(s) moved in it carry "
+              "no `@ commit` and are read in today's lines - commit it with the "
+              "map" % path)
+    if moved:
+        stamped = [s for s in known.values() if s]
+        print("re-aimed %d code range(s); the proof on each still holds - the lines "
+              "moved, and the code in them did not change after its proof%s"
+              % (len(moved), ", each stamped `@ %s`, the commit whose lines it "
+                 "is in" % stamped[0] if stamped and not unstamped else ""))
+    if declined:
+        print("%s%d range(s) left as written (named above): a change inside each "
+              "is not covered by its proof - re-drive it, then --reaim, or set it "
+              "by hand" % ("" if moved else "no code range was re-aimed; ",
+                           len(declined)))
     return 0
 
 
@@ -1889,15 +2037,25 @@ def cmd_check(root, mp):
     elif unmapped_ceiling is not None and len(new) < unmapped_ceiling:
         loosen_unmapped = (len(new), unmapped_ceiling)
 
+    # Every pointer, not the first path of the `code:` field alone: a bare
+    # `BaseLayout.astro:138` in an entry named no file and passed for days
+    # (a static site, 2026-09-30).
+    ptrs = _scan_pointers(root, text)
     gone = []
     for fid, f in authored.items():
         code = f.get("code", "").split(":")[0].strip().strip("`")
-        if code and not os.path.exists(os.path.join(root, code)):
-            gone.append((fid, code))
+        if code and not any(p.fid == fid and p.field == "code" for p in ptrs) \
+                and not os.path.exists(os.path.join(root, code)):
+            gone.append("%s -> %s" % (fid, code))
+    for p in ptrs:
+        if not p.exists:
+            gone.append("%s -> %s (in its %s field)" % (p.fid, _ptr_text(p), p.field))
     if gone:
         problems.append(
-            "%d authored entry/entries point at code that no longer exists:\n"
-            % len(gone) + "\n".join("    %s -> %s" % g for g in gone))
+            "%d authored pointer(s) name code that does not exist - no such file "
+            "under the project (a bare name, a moved file, a typo), and a pointer "
+            "no reader can follow verifies nothing:\n"
+            % len(gone) + "\n".join("    " + g for g in gone))
 
     orphans = [(fid, _successor(fid, f, feats, set(authored)))
                for fid, f in sorted(authored.items())
@@ -1972,12 +2130,17 @@ def cmd_check(root, mp):
     # its proof was not seen at all.
     ok_git, _ = git(root, "rev-parse", "--git-dir")
     stale, ungraded, by_region, by_day = [], [], 0, []
-    # A region's numbers are in the lines of the commit that last wrote its
-    # `code:` line (git blame), so that is the side of the diff it is held
-    # against. Where blame cannot say, both sides are tried.
-    written = dict((fid, sha) for _, fid, _, sha in
-                   (_pointer_lines(root, mp, text) if ok_git else None) or [])
-    diffs = {}
+    # A region's numbers are in the lines of the commit stamped on it, else
+    # the commit that last wrote its map line (git blame), so that is the side
+    # of the diff it is held against. Where neither can say, both sides are
+    # tried. Each `code:` pointer is a region of its own file - the field's
+    # last numbers held against its first path put one file's range on
+    # another's diff (a static site's region.primary, 2026-09-30).
+    placed = (_pointers(root, mp, text) if ok_git else None) or []
+    moved, declined, dangling, unplaced = _moved_pointers(root, mp, text) \
+        if ok_git else ([], [], [], [])
+    left = dict(((mv.ptr.line, mv.ptr.start), mv) for mv in declined)
+    diffs, known = {}, {}
 
     def diff(*key):
         if key not in diffs:
@@ -1996,22 +2159,28 @@ def cmd_check(root, mp):
         if not ok_git:
             continue
         sha = re.search(r"@\s*([0-9a-fA-F]{7,40})\b", when)
-        hunks = None
+        regions = [(p, p.path, _span(p)) for p in placed
+                   if p.fid == fid and p.field == "code" and p.exists] \
+            or [(None, code, None)]
+        hunks = {}
         if sha and git(root, "rev-parse", "--verify", "--quiet",
                        sha.group(1) + "^{commit}")[0]:
-            hunks = _hunks(root, sha.group(1), code)
-        if hunks is not None:
+            hunks = dict((path, _hunks(root, sha.group(1), path))
+                         for _, path, _ in regions)
+        if hunks and all(h is not None for h in hunks.values()):
             by_region += 1
-            span = mapped = _region(code_field)
-            side, w = None, written.get(fid)
-            if span and w is not None:
-                if not w.strip("0") or diff(w, code) == []:
-                    side = 1                        # today's lines
-                elif diff(w, code, sha.group(1)) is not None:
-                    side = 0                        # carried into the proof's
-                    mapped = _translate(diff(w, code, sha.group(1)), *span)
-            hit = [h for h in hunks if _touches(h, mapped, side)]
-            if hit:
+            for p, path, span in regions:
+                mapped, side, w = span, None, None
+                if span and p is not None:
+                    w = _base(root, p, known)[0]
+                    if w is None or diff(w, path) == []:
+                        side = 1                    # today's lines
+                    elif diff(w, path, sha.group(1)) is not None:
+                        side = 0                    # carried into the proof's
+                        mapped = _translate(diff(w, path, sha.group(1)), *span)
+                hit = [h for h in hunks[path] if _touches(h, mapped, side)]
+                if not hit:
+                    continue
                 # Both sides, each named: one side's numbers printed as the
                 # other's put a change "inside" a region it was 10 lines away
                 # from. The region says which side it is on.
@@ -2024,10 +2193,18 @@ def cmd_check(root, mp):
                     where += " at %s" % sha.group(1) + (
                         " (%d-%d as written @ %s)" % (span + (w[:7],))
                         if mapped != span else "")
-                stale.append("%s: verified @ %s, then %s changed at line(s) %s "
-                             "at %s (%s now), touching its region %s"
-                             % (fid, sha.group(1), code, was, sha.group(1), now,
-                                where))
+                line = ("%s: verified @ %s, then %s changed at line(s) %s at %s "
+                        "(%s now), touching its region %s"
+                        % (fid, sha.group(1), path, was, sha.group(1), now, where))
+                # The drift beside the stale proof, never instead of it: a
+                # range that moved with a change inside stayed unsaid while its
+                # proof was stale (a static site's ui.vista, 2026-09-30).
+                mv = left.get((p.line, p.start)) if p is not None else None
+                if mv:
+                    line += ("; and it has moved: %s (written @ %s) -> %s, not "
+                             "re-aimed until re-driven"
+                             % (_ptr_text(p), mv.base[:7], _ptr_text(p, mv.now)))
+                stale.append(line)
             continue
         by_day.append(fid)
         got, out = git(root, "log", "-1", "--format=%cI", "--", code)
@@ -2051,18 +2228,48 @@ def cmd_check(root, mp):
     # above three hand-mapped ranges left each naming other code - a script, a
     # section's close - while every check passed. Every entry, graded or not:
     # a pointer is a claim about where the code is, whatever its proof.
-    moved = _moved_pointers(root, mp, text) if ok_git else []
-    if moved:
+    if moved or declined:
+        rows = [((mv.ptr.line, mv.ptr.start), "    %s: %s (written @ %s%s) -> %s"
+                 % (mv.ptr.fid, _ptr_text(mv.ptr), mv.base[:7], mv.via,
+                    _ptr_text(mv.ptr, mv.now))) for mv in moved]
+        rows += [((mv.ptr.line, mv.ptr.start), "    %s: %s (written @ %s) -> %s NOT "
+                  "re-aimed: %s - re-drive it, then --reaim, or set it by hand"
+                  % (mv.ptr.fid, _ptr_text(mv.ptr), mv.base[:7],
+                     _ptr_text(mv.ptr, mv.now), mv.reason)) for mv in declined]
         problems.append(
             "%d hand-mapped code range(s) name lines that have moved - code was "
             "added or removed above them after the pointer was written, so those "
-            "numbers now hold other code. The code in them did not change after "
-            "its proof, so no proof is staled by this. Run --reaim, or set each "
-            "by hand:\n"
-            % len(moved)
-            + "\n".join("    %s: %s (written @ %s) -> %s"
-                        % (fid, old, sha, re.sub(r"^\s*-\s*code:\s*`?|`?\s*$", "", new))
-                        for _, fid, old, sha, new in moved))
+            "numbers now hold other code. The code in a range --reaim can move "
+            "did not change after its proof, so no proof is staled by that: run "
+            "--reaim, or set each by hand. One marked NOT re-aimed has a change "
+            "inside it that no proof covers, so --reaim leaves it:\n"
+            % (len(moved) + len(declined))
+            + "\n".join(row for _, row in sorted(rows)))
+    _say_dangling(dangling)
+    # A pointer neither committed nor stamped is read in today's lines: right
+    # at the moment it is written, wrong once HEAD moves past commits touching
+    # its file. --check cannot tell which, so the PASS says the bound.
+    unplaced_bound = ""
+    if unplaced:
+        ok, last = git(root, "log", "-1", "--format=%h", "--", rel(root, mp))
+        last, since, ahead = (last.strip() if ok else ""), {}, []
+        for ptr in unplaced:
+            if ptr.path not in since:
+                ok, out = (git(root, "log", "--format=%h", "%s..HEAD" % last, "--",
+                               ptr.path) if last else (False, ""))
+                since[ptr.path] = len(out.split()) if ok else 0
+            if since[ptr.path]:
+                ahead.append("%s %s (%s, %d commit(s))"
+                             % (ptr.fid, _ptr_text(ptr), ptr.path, since[ptr.path]))
+        if ahead:
+            unplaced_bound = (
+                "%d pointer(s) not yet committed carry no `@ commit`, so their "
+                "numbers are read in today's lines, though their file changed at "
+                "commit(s) since the map's last commit (%s) - written before those, "
+                "a move under them is not seen: --reaim stamps what it moves; stamp "
+                "a hand-written one `path:N-M @ <commit>`, or commit the map soon "
+                "after writing it: %s" % (len(ahead), last, "; ".join(ahead)))
+            print("NOTE " + unplaced_bound)
     if by_day:
         print("NOTE %d proof(s) measured by day only - their verified_at names no "
               "commit this repository has, so a change on the day of the proof "
@@ -2171,11 +2378,54 @@ def cmd_check(root, mp):
     if by_hand:
         bounds.append("%d surface file(s) are mapped by hand, not parsed "
                       "(unparsed_accepted): %s" % (len(by_hand), ", ".join(by_hand)))
+    if unplaced_bound:
+        bounds.append(unplaced_bound)
     print("PASS no drift, no stale proof, "
           + ("every surface file parsed or accepted" if by_hand
              else "every surface file parsed")
           + (" - bound: " + "; ".join(bounds) if bounds else ""))
     return 0
+
+
+def _new_proof(d, stamp, commit, body):
+    """Write one capture under a name of its own and return the name. The name
+    is taken to the second, and two captures inside one second shared it: the
+    later one silently replaced the earlier (the pack's reviewer, 2026-09-30).
+    The file is created exclusively, so a same-second sibling - or a parallel
+    run - gets ~2, ~3, ... after the commit, which still sorts after it."""
+    if not os.path.isdir(d):
+        os.makedirs(d)
+    n = 1
+    while True:
+        name = "%s-%s%s.json" % (stamp, commit, "" if n == 1 else "~%d" % n)
+        try:
+            fd = os.open(os.path.join(d, name), os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                         | getattr(os, "O_BINARY", 0))
+        except FileExistsError:
+            n += 1
+            continue
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            fh.write(body)
+        return name
+
+
+def _say_verified_at(root, fid, commit):
+    """The map line a passing capture asks for. A work label (K82.1) where the
+    commit belongs is read by day and by whole file: any change to the file on
+    a later day stales it, one later that day is missed (KiT, 2026-09-30)."""
+    want = "%s @ %s" % (datetime.date.today(), commit)
+    mp = os.path.join(root, MAP_NAME)
+    have = parse_map(read(mp))[1].get(fid, {}).get("verified_at", "").strip() \
+        if os.path.exists(mp) else ""
+    if have == want:
+        return
+    sha = re.search(r"@\s*([0-9a-fA-F]{7,40})\b", have)
+    if have and not (sha and git(root, "rev-parse", "--verify", "--quiet",
+                                 sha.group(1) + "^{commit}")[0]):
+        print("WARN %s's verified_at (%s) names no commit, so --check reads it by "
+              "day only and over the whole file - a change later that day is "
+              "missed, any change on a later day stales it" % (fid, have))
+    print("map: set %s's verified_at to `%s` (this capture's commit)" % (fid, want))
 
 
 def cmd_record(root, args):
@@ -2221,11 +2471,12 @@ def cmd_record(root, args):
             prev = json.loads(read(latest))
         except ValueError:
             prev = None
-    name = "%s-%s.json" % (now.strftime("%Y%m%dT%H%M%SZ"), rec["commit"])
     body = json.dumps(rec, indent=2, sort_keys=True) + "\n"
-    write(os.path.join(d, name), body)
+    name = _new_proof(d, now.strftime("%Y%m%dT%H%M%SZ"), rec["commit"], body)
     write(latest, body)
     print("recorded %s" % rel(root, os.path.join(d, name)))
+    if ok_git and rec["grade"] in ("DRIVEN", "TESTED") and rec["result"] == "pass":
+        _say_verified_at(root, args.feature, commit)
 
     if not prev:
         print("first capture for this feature - nothing to compare yet")
@@ -2448,6 +2699,16 @@ def snapshot(root, ref=None):
 
 
 _FACE_ORDER = {"user": 0, "dev": 1}
+_FACES = ("user", "dev", "unclassified")
+
+
+def _authored_face(value):
+    """The face an author wrote - user, dev or unclassified, its reason allowed
+    after a dash or in brackets - or None. Anything else is not a face: the
+    template's hint line (`user · dev — only to overrule ...`) was taken as
+    written and --list printed it as a bucket (the pack's reviewer, 2026-09-30)."""
+    v = re.split(r"\s+[-–—]+\s+|\s*[(:]", (value or "").strip().lower(), 1)[0].strip()
+    return v if v in _FACES else None
 
 
 def entries(snap):
@@ -2463,7 +2724,7 @@ def entries(snap):
         else:
             surface, code = a.get("surface", ""), a.get("code", "").strip("`")
             note, face = "mapped by hand", "unclassified"
-        rows.append({"id": fid, "face": (a.get("face") or face).strip().lower(),
+        rows.append({"id": fid, "face": _authored_face(a.get("face")) or face,
                      "surface": surface, "code": code, "note": note,
                      "grade": (a.get("grade") or "").strip().upper() or None})
     rows.sort(key=lambda r: (_FACE_ORDER.get(r["face"], 2), r["id"]))

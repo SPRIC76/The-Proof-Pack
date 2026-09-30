@@ -7,8 +7,8 @@ written from the same reading as the code. Everything else is code's job.
 
 ## The one path
 
-Every Jev call goes through the **levjev skill's** client (`.agents/skills/levjev/scripts/jev.py`,
-installed beside this skill; the jev skill's until 2026-09-29). The pin, the lint, the key and the retries are that
+Every Jev call goes through the **levjev skill's** client (`levjev/scripts/jev.py`, the
+levjev skill installed beside this one in the same skills folder; the jev skill's until 2026-09-29). The pin, the lint, the key and the retries are that
 skill's rules, in its SKILL.md with the selftest check that defends each one. Here
 is only what `--judge` itself adds, each defended by Verafox's selftest case 28:
 

@@ -1,8 +1,8 @@
 ---
 name: levjev
-description: LevJev (Leverage Jev) - one home for everything Jev, TypeSafe's System One model - typed judgments (a Noul probability, a Choice or a Score) asked one pinned way through scripts/jev.py, and repository search through scripts/search.py, which replaces jevgrep. The client enforces the rules in code - jev-1.13.0 pinned and aliases refused, no state addressed by index, one request per state, nothing Jev cannot do (counting, dates, math, hex/RGB/binary, generation), the key never printed, no threshold gating until validated on the operator's own data. Use when the user says LevJev, Jev, TypeSafe or jevgrep; whenever a judgment or a prompt-and-parse LLM step could become a typed decision; before sending any Jev question (lint it first); when choosing a confidence threshold; and to start on how, why or where behavior works in a repository, before broad text search. Not for exact symbols, strings or filenames (use grep). For TypeSafe's own docs use typesafe-ai; where the two disagree, this one wins.
+description: LevJev (Leverage Jev) - one home for everything Jev, TypeSafe's System One model - typed judgments (a Noul probability, a Choice or a Score) asked one pinned way through scripts/jev.py, and repository search through scripts/search.py, which replaces jevgrep. The client enforces the rules in code - jev-1.13.0 pinned and aliases refused, no state addressed by index, one request per state, nothing Jev cannot do (counting, dates, math, hex/RGB/binary, generation), the key never printed, no threshold gating until validated on the operator's own data. Use when the user says LevJev, Jev, TypeSafe or jevgrep; whenever a judgment or a prompt-and-parse LLM step could become a typed decision; before sending any Jev question (lint it first); when choosing a confidence threshold; and to start on how, why or where behavior works in a repository, before broad text search. Not for exact symbols, strings or filenames (use grep). For TypeSafe's own docs use the vendor's typesafe-ai; where the two disagree, this one wins.
 metadata:
-  version: 1.0.1
+  version: 1.0.3
   merged_from: jev 1.0.0 (split from verafox 1.2.1 on 2026-09-24) and a repository search that replaces the third-party jevgrep (2026-09-29)
   source: its author's standing order for TypeSafe's Jev, the first measured run (2026-09-21), and the finding that Jev was asked only a handful of times a day (2026-09-29)
   owner: SPRIC76
@@ -113,7 +113,22 @@ python scripts/search.py "<question>" <root>             the search; prints the 
   password given a quoted value (bare, prefixed or as a JSON or YAML key), or a
   GitHub, Slack, Stripe live, Google, OpenAI, Anthropic, Bearer or JWT token. A
   placeholder (an environment variable's name, a template, a your-... value) is not.
-  Every skip is counted; `--show-skipped` names them.
+  Every skip is counted; `--show-skipped` names them. A file over the size cap is
+  named with its size even without it, since it is often the heart of the code.
+- **Widening what it reads is an opt-in, each flag by name.** `--hidden` reads
+  hidden paths, `--no-ignore` the gitignored, `--include-dependencies` the
+  dependency and build folders, `--exclude <pattern>` (repeatable) skips more, and
+  `--max-file-bytes <n>` raises the size cap. `--include-sensitive` reverses the rule
+  above: the `.env` files, keys, credentials and secret-looking lines it would skip
+  are sent to TypeSafe as excerpts, in a request body, and their readings cached.
+  That is a secret leaving the machine. Use it only on a tree you know holds no real
+  secret, never on a checkout with a live `.env`.
+- **When docs fill the top, it says so.** If most of the results shown are
+  documentation and the search read code too, the output ends its list with the
+  `--exclude` (such as `--exclude '*.md'`) that searches the code alone.
+- **The cache is a folder of yours.** Readings live under `~/.cache/levjev/search`;
+  `--cache-dir <folder>` moves them (a scratch tree, a CI job), and `--no-cache`
+  reads and writes none.
 - **Jev decides, code computes.** One Noul per excerpt, the excerpt inlined as data.
   Code ranks, trims and counts. The reading orders the list and never cuts it off,
   because it is not yet calibrated on the operator's data.
@@ -126,8 +141,9 @@ subagent's instructions, and have it read the excerpts before searching again.
 
 ## TypeSafe's own skill
 
-`typesafe-ai` is the vendor's skill: live docs, cookbooks and ideas for what Jev
-could do. Use it to explore. It still teaches `ticket.messages[0].text`, which the
+`typesafe-ai` is TypeSafe's own skill, published by the vendor and not part of this
+pack: live docs, cookbooks and ideas for what Jev could do. Install it from TypeSafe
+to explore. It still teaches `ticket.messages[0].text`, which the
 measured rule forbids and this client refuses. Where the two disagree, this skill
 wins.
 

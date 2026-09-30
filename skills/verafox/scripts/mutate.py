@@ -36,8 +36,14 @@ HOW IT READS A LINE
     YAML, CSV) are read apart; a file with a #! line is code whatever its
     name. A URL in code flags when the line loads it or names it as one
     (VENDOR_URL = ...); elsewhere it is a link. Files under tests/, fixtures/
-    and the like are set apart as in_tests - listed, not flagged - unless the
-    skill's own markdown names the file, because then the agent runs it. In
+    and the like, and a *selftest.py, are set apart as in_tests - listed, not
+    flagged - unless the skill's own markdown names the file, because then the
+    agent runs it. A code file sets its own matches apart - a self-test's
+    fixture strings, a detector table - with a comment line of its own:
+    `mutate: fixture` in its first ten lines for the whole file, or
+    `mutate: fixture-begin` / `mutate: fixture-end` around a region. Those
+    hits are listed under the file's name as the file's own claim, prose is
+    never set apart this way, and a file without the pragma reads as before. In
     prose a match counts apart as defensive when a prohibition before it in
     its clause covers it ("never run `git push --force`"), or when it sits
     under an anti-pattern heading ("Red flags", "Common mistakes"); injection
@@ -92,6 +98,9 @@ PROSE_EXT = {".md", ".mdx", ".txt", ".rst", ""}
 MAX_FILE = 2 * 1024 * 1024
 MAX_REPO_LEVEL_FILES = 400
 
+# The tables below hold every string the detectors hunt, so a read of this
+# folder flagged them (the pack's reviewer, 2026-09-30); see fixture_spans.
+# mutate: fixture-begin
 _URL = re.compile(r"https?://[^\s\"'`)>\]\\]+")
 _SAFE_HOSTS = ("w3.org", "json-schema.org", "schemas.", "schema.org", "opensource.org",
                "spdx.org", "example.com", "example.org", "example.invalid", "example.net",
@@ -170,9 +179,11 @@ _URL_LOADED = re.compile(
     r"\bnpm\s+install\b", re.I)
 # Tests and fixtures do not run at load or use: their hits are set apart,
 # unless the skill's own markdown names the file (then the agent runs it).
+# A *selftest.py is a test file by name, as a test_*.py is.
 _TEST_PATH = re.compile(r"(?:^|/)(?:tests?|__tests__|specs?|fixtures|__fixtures__|testdata|"
                         r"test-fixtures|e2e)/|(?:^|/)[^/]*\.(?:test|spec)\.\w+$|"
-                        r"(?:^|/)[^/]*_test\.\w+$|(?:^|/)test_[^/]*\.py$")
+                        r"(?:^|/)[^/]*_test\.\w+$|(?:^|/)test_[^/]*\.py$|"
+                        r"(?:^|/)[^/]*selftest\.\w+$")
 CODE_NAMES = {"Dockerfile", "Makefile", "Rakefile", "Justfile"}
 # Injection detectors whose text IS the negation: a prohibition cannot excuse them.
 NEG_IS_FINDING = {"do not read", "do not ask or pause for permission",
@@ -363,6 +374,41 @@ _NOT_FOR = re.compile(r"\b(not\s+for|do\s+not\s+use|don'?t\s+use|never\s+use|not
 _SPAWN = re.compile(r"\b(subprocess\.(run|Popen|call|check_output|check_call)|spawn(Sync)?\(|"
                     r"exec(Sync|File|FileSync)?\(|os\.system\(|Start-Process|"
                     r"child_process|Command::new)\b")
+# mutate: fixture-end
+
+# A code file can set its own matches apart - a self-test's fixture strings, a
+# detector table - with a comment line holding nothing but the pragma:
+# `mutate: fixture` in the first ten lines for the whole file, or
+# `mutate: fixture-begin` / `mutate: fixture-end` around a region. Narrow on
+# purpose: prose is never set apart (an instruction to the agent lives in
+# markdown), the hits stay listed under the file's name as the file's own
+# claim, and a file without the pragma reads exactly as before. The pack's
+# reviewer (2026-09-30) read this skill's own folder RED for 190 such hits.
+_PRAGMA = re.compile(r"^\s*(?:#|//|--|;|/\*|\*|<!--)\s*mutate:\s*fixture(-begin|-end)?"
+                     r"\s*(?:\*/|-->)?\s*$")
+PRAGMA_NOTE = " - under the file's mutate: fixture pragma"
+
+
+def fixture_spans(lines):
+    """[(first, last)] line ranges, 1-based and inclusive, that a code file
+    sets apart with the pragma. A begin without an end runs to the end of the
+    file; a bare pragma past the tenth line is not honoured."""
+    spans, start = [], None
+    for i, ln in enumerate(lines, 1):
+        m = _PRAGMA.match(ln)
+        if not m:
+            continue
+        if m.group(1) == "-begin":
+            start = start or i
+        elif m.group(1) == "-end":
+            if start:
+                spans.append((start, i))
+                start = None
+        elif i <= 10:
+            return [(1, len(lines))]
+    if start:
+        spans.append((start, len(lines)))
+    return spans
 
 # ---------------------------------------------------------------- helpers
 
@@ -481,8 +527,12 @@ def repo_top(d):
 
 
 _LICENCE_NAME = re.compile(r"^(licen[cs]e|copying|unlicense)(\.[\w-]+|[-_.].*)?$", re.I)
+# A licence is read by its own grant or heading, not by a name anywhere in it: a
+# freeware licence that tells how earlier versions were "released under the MIT
+# License" is freeware (Verafox's own drive over a real repository, 2026-09-30).
 _LICENCE_KINDS = (
-    ("MIT", re.compile(r"\bMIT Licen[cs]e\b|Permission is hereby granted, free of charge")),
+    ("MIT", re.compile(r"Permission is hereby granted, free of charge|\A\s*(?:The )?MIT Licen[cs]e\b")),
+    ("freeware", re.compile(r"\bFreeware Licen[cs]e\b|\bis freeware\b", re.I)),
     ("Apache-2.0", re.compile(r"Apache License")),
     ("BSL-1.1", re.compile(r"Business Source License")),
     ("AGPL", re.compile(r"GNU AFFERO GENERAL PUBLIC LICENSE")),
@@ -603,10 +653,14 @@ def scan_text(relpath, text, kind):
     """[(category, label, line, text, match)], [(line, text, why)] defensive,
     notes. kind is code | md | data (file_kind)."""
     flags, defensive, notes = [], [], {"links": set(), "local": [], "spawns": 0,
-                                       "config_mentions": []}
+                                       "config_mentions": [], "fixture": [],
+                                       "fixture_spans": []}
     seen = {}  # (category, label, line) -> index in flags
     lines = text.split("\n")
     is_md = kind == "md"
+    spans = fixture_spans(lines) if kind == "code" else []
+    notes["fixture_spans"] = ["whole file" if (a, b) == (1, len(lines)) else "%d-%d" % (a, b)
+                              for a, b in spans]
     fences, heads = fences_and_headings(lines) if is_md else (None, None)
     opens_block, nxt = [False] * len(lines), False     # next non-blank line is a fence
     for k in range(len(lines) - 1, -1, -1):
@@ -698,22 +752,29 @@ def scan_text(relpath, text, kind):
             seen[key] = len(flags)
             flags.append((category, label + when, i, excerpt, ", ".join(live)[:120]))
         prev = ln
+    if spans:
+        # the file's own claim: kept apart under its name, never dropped
+        notes["fixture"] = [f for f in flags if any(a <= f[2] <= b for a, b in spans)]
+        flags = [f for f in flags if not any(a <= f[2] <= b for a, b in spans)]
     return flags, defensive, notes
 
 
+# mutate: fixture-begin
 _REF = re.compile(
     r"(?<![\w:/@>)}\]-])((?:\.\.?/|~/|/|\$\{?[A-Z_]+\}?/|%[A-Z_]+%[/\\])?(?:[\w.$@{}%-]+/)*"
     r"[\w.@{}%-]+\.(?:md|mdx|txt|py|js|mjs|cjs|ts|tsx|jsx|sh|bash|ps1|psm1|cmd|bat|json|"
     r"jsonc|jsonl|yaml|yml|toml|csv|tsv|html|css|svg|png|jpe?g|gif|webp|wasm|exe|xml|"
     r"sql|rs|go|rb|php|ipynb|pdf|log))\b")
+# A dot before the folder name is a dot-folder elsewhere (~/.agents/skills), not the skill's own agents/.
 _REF_DIR = re.compile(
-    r"(?<![\w:/@>)}\]-])((?:\.\.?/)?(?:\.\./)*(?:scripts|bin|references?|assets|data|"
+    r"(?<![\w:/@>)}\].-])((?:\.\.?/)?(?:\.\./)*(?:scripts|bin|references?|assets|data|"
     r"templates|hooks|agents|commands|examples|docs)/[\w.-]+)\b")
 _VAR_ROOT = re.compile(r"^(\$\{?[A-Z_]+\}?|%[A-Z_]+%|~|/|[A-Za-z]:)")
 _MD_LINK = re.compile(r"\]\(\s*<?([^)\s#>]+)")
 _SKILL_SUBDIRS = {"scripts", "bin", "references", "reference", "assets", "data",
                   "templates", "hooks", "agents", "commands", "examples", "docs",
                   "resources"}
+# mutate: fixture-end
 
 
 def references(skill_dir, md_texts, repo):
@@ -778,6 +839,7 @@ def references(skill_dir, md_texts, repo):
     return {"inside": sorted(inside), "dangling": sorted(dangling), "outside": outside}
 
 
+# mutate: fixture-begin
 KNOWN_TOOLS = (
     "git gh node npm npx pnpm yarn bun deno python python3 pip pip3 pipx uv uvx poetry "
     "cargo rustc go brew winget choco apt apt-get docker kubectl jq yq zip unzip tar dot "
@@ -793,6 +855,7 @@ _SHELL_WORDS = {"if", "then", "else", "fi", "for", "do", "done", "while", "echo"
 _SHELL_FENCE = {"", "bash", "sh", "shell", "zsh", "fish", "console", "terminal",
                 "powershell", "pwsh", "ps1", "ps", "cmd", "bat", "batch"}
 _SHELL_EXT = {".sh", ".bash", ".zsh", ""}
+# mutate: fixture-end
 
 
 def _fence_and_span_lines(text):
@@ -826,6 +889,7 @@ def _commands(cmd_line):
             yield re.sub(r"^\./", "", toks[0]).lower()
 
 
+# mutate: fixture-begin
 _CODE_TOOL = re.compile(
     r"\b(?:run|Popen|call|check_output|check_call|spawn|spawnSync|exec|execSync|execFile|"
     r"execFileSync|which|Get-Command)\s*\(?\s*\(?\s*\[?\s*[\"'`]([a-z][\w.-]*)")
@@ -856,6 +920,7 @@ _ENV_COMMON = {"PATH", "HOME", "USERPROFILE", "TEMP", "TMP", "APPDATA", "LOCALAP
 # mcp-<name> was dropped: mcp-builder is a skill, not a server.
 _MCP = (re.compile(r"\bmcp__([\w-]+)__"), re.compile(r"\b([\w.-]+-mcp)\b"),
         re.compile(r"\b(RUBE)_\w+"))
+# mutate: fixture-end
 
 
 def dependencies(md_texts, other_texts):
@@ -919,6 +984,14 @@ def _hits(r, f):
             for c, l, i, x, mt in f]
 
 
+def _apart(r, f):
+    """The hits a file set apart itself, each labelled with the claim."""
+    hits = _hits(r, f)
+    for h in hits:
+        h["label"] += PRAGMA_NOTE
+    return hits
+
+
 def inspect_skill(skill_md, root, repos, all_names_by_repo):
     skill_dir = os.path.dirname(skill_md)
     folder = os.path.basename(skill_dir)
@@ -931,8 +1004,9 @@ def inspect_skill(skill_md, root, repos, all_names_by_repo):
     desc, dstyle, dline = fm.get("description", ("", "missing", 0))
     desc = desc.strip()
     flags, defensive, notes = [], [], {"links": set(), "local": [], "spawns": 0,
-                                       "config_mentions": [], "unscanned": []}
-    md_texts, other_texts, tests_hits, nfiles, nbytes = [], [], [], 0, 0
+                                       "config_mentions": [], "unscanned": [],
+                                       "pragmas": []}
+    md_texts, other_texts, tests_hits, pragma_hits, nfiles, nbytes = [], [], [], [], 0, 0
     for p in _walk_files(skill_dir):
         r = rel(skill_dir, p)
         nfiles += 1
@@ -949,6 +1023,9 @@ def inspect_skill(skill_md, root, repos, all_names_by_repo):
             continue
         kind = file_kind(p, t)
         f, d, n = scan_text(r, t, kind)
+        if n["fixture_spans"]:
+            notes["pragmas"].append("%s (%s)" % (r, ", ".join(n["fixture_spans"])))
+            pragma_hits += _apart(r, n["fixture"])
         if _TEST_PATH.search(r):
             tests_hits += _hits(r, f)
             continue
@@ -1009,6 +1086,9 @@ def inspect_skill(skill_md, root, repos, all_names_by_repo):
             continue
         x["read"] = "read; its flags are this skill's"
         f, d, _n = scan_text(x["ref"], t, file_kind(p, t))
+        if _n["fixture_spans"]:
+            notes["pragmas"].append("%s (%s)" % (x["ref"], ", ".join(_n["fixture_spans"])))
+            pragma_hits += _apart(x["ref"], _n["fixture"])
         for h in _hits(x["ref"], f):
             h["label"] += " - in a file outside the skill folder that it references"
             flags.append(h)
@@ -1054,11 +1134,11 @@ def inspect_skill(skill_md, root, repos, all_names_by_repo):
         "deps": dependencies(md_texts, other_texts),
         "size": {"files": nfiles, "bytes": nbytes,
                  "skill_md_lines": text.count("\n") + 1},
-        "flags": flags, "defensive": defensive, "in_tests": in_tests,
+        "flags": flags, "defensive": defensive, "in_tests": in_tests + pragma_hits,
         "notes": {"links": sorted(notes["links"]), "local_urls": notes["local"],
                   "spawns": notes["spawns"],
                   "config_mentions": notes["config_mentions"],
-                  "unscanned": notes["unscanned"]},
+                  "unscanned": notes["unscanned"], "pragmas": notes["pragmas"]},
         "_text": text,
     }
 
@@ -1089,6 +1169,7 @@ def companions(skills):
         s["deps"]["tools"] = [t for t in s["deps"]["tools"] if t["name"] not in skill_names]
 
 
+# mutate: fixture-begin
 _WIRING_SEGS = {"hooks", "commands", ".claude-plugin", ".cursor-plugin", ".codex-plugin",
                 ".gemini-plugin", ".devin-plugin", ".hermes-plugin", ".openclaw"}
 _WIRING_NAMES = {"plugin.json", "hooks.json", "marketplace.json", "install.sh",
@@ -1096,13 +1177,14 @@ _WIRING_NAMES = {"plugin.json", "hooks.json", "marketplace.json", "install.sh",
                  "index.js", "gemini-extension.json", "opencode.json", "plugin.yaml",
                  "AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "after-install.md",
                  "Dockerfile"}
+# mutate: fixture-end
 
 
 def repo_level_scan(top, root, skill_dirs):
     """Flags in the wiring outside any skill folder: hooks, commands, plugin
     manifests, installers, top-level scripts and bin, README and INSTALL.
-    Wiring under tests/ is set apart, as in a skill."""
-    flags, in_tests, seen, truncated = [], [], 0, False
+    Wiring under tests/, or under a fixture pragma, is set apart, as in a skill."""
+    flags, in_tests, pragmas, seen, truncated = [], [], [], 0, False
     tops = [os.path.normcase(os.path.abspath(d)) for d in skill_dirs]
     for p in _walk_files(top):
         r = rel(top, p)
@@ -1123,8 +1205,11 @@ def repo_level_scan(top, root, skill_dirs):
             continue
         f, _d, _n = scan_text(r, t, file_kind(p, t))
         (in_tests if _TEST_PATH.search(r) else flags).extend(_hits(r, f))
+        if _n["fixture_spans"]:
+            pragmas.append("%s (%s)" % (r, ", ".join(_n["fixture_spans"])))
+            in_tests += _apart(r, _n["fixture"])
     return {"repo": rel(root, top), "files_scanned": seen, "truncated": truncated,
-            "flags": flags, "in_tests": in_tests}
+            "flags": flags, "in_tests": in_tests, "pragmas": pragmas}
 
 
 def cmd_inventory(a):
@@ -1186,8 +1271,8 @@ def cmd_inventory(a):
                       "flagged_skills": flagged, "repo_level_flags": nrepo,
                       "defensive": ndef, "in_tests": ntests}}
     result = ("inventory %s - %d skill(s) in %d repo(s); %d red flag(s) in %d skill(s), "
-              "%d in repo wiring; %d defensive mention(s) and %d hit(s) in tests "
-              "counted apart; read-only"
+              "%d in repo wiring; %d defensive mention(s) and %d hit(s) in tests or "
+              "under a fixture pragma counted apart; read-only"
               % (root, len(skills), len(repos), nflags, flagged, nrepo, ndef, ntests))
     body = json.dumps(doc, indent=1, ensure_ascii=False) if a.json else render_inventory(doc)
     if a.out:
@@ -1241,6 +1326,18 @@ def tests_line(hits):
     files = sorted({h["file"] for h in hits})
     return ("- set apart, in tests or fixtures (not at load or use): %d hit(s) in %s"
             % (len(hits), _cut(files, 6, ", ")))
+
+
+def set_apart_lines(hits, pragmas):
+    """Tests and fixtures by path first; then what a file set apart itself,
+    named, because that claim is the file's own and a reader should open it."""
+    tests = [h for h in hits if not h["label"].endswith(PRAGMA_NOTE)]
+    out = [tests_line(tests)] if tests else []
+    if pragmas:
+        out.append("- set apart by a `mutate: fixture` pragma, the file's own claim - "
+                   "read it: %d hit(s) in %s" % (len(hits) - len(tests),
+                                                 _cut(pragmas, 6, ", ")))
+    return out
 
 
 def render_inventory(doc):
@@ -1301,8 +1398,7 @@ def render_inventory(doc):
             o.append("- defensive mentions (not flags): " + _cut(
                 ["%s:%d (%s)" % (x["file"], x["line"], x.get("why", ""))
                  for x in s["defensive"]], 12, "; "))
-        if s["in_tests"]:
-            o.append(tests_line(s["in_tests"]))
+        o += set_apart_lines(s["in_tests"], s["notes"].get("pragmas", []))
         n = s["notes"]
         bits = []
         if n["links"]:
@@ -1327,8 +1423,7 @@ def render_inventory(doc):
         o += grouped_flags(r["flags"], "")
         if not r["flags"]:
             o.append("- none")
-        if r["in_tests"]:
-            o.append(tests_line(r["in_tests"]))
+        o += set_apart_lines(r["in_tests"], r.get("pragmas", []))
         o.append("")
     return "\n".join(o)
 
