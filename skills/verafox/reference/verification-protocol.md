@@ -4,9 +4,9 @@ One rule sits above all of them: **verify at the layer the user meets, not the l
 you edited.** A change to a handler is verified by reaching the handler the way a
 user reaches it. Every shortcut below the user's layer proves the shortcut works.
 
-For anything about rendered appearance — geometry, colour, contrast, occlusion,
+For anything about rendered appearance — geometry, color, contrast, occlusion,
 theme — stop here and use the `measure-in-the-browser` skill. For whether a test
-could have failed at all, use `testcatch`. This file is about behaviour.
+could have failed at all, use `testcatch`. This file is about behavior.
 
 ## Web UI
 
@@ -71,7 +71,7 @@ still shows the new value after reload — tests persistence, not effect.
 - **Trigger it directly once** to prove the body works, then **prove the trigger
   fires** — those are two verifications and the second is the one that is usually
   missing. A job whose body is perfect and whose cron never fires is scheduled
-  theatre.
+  theater.
 - **Assert on the state it was supposed to leave behind**, and on what it did to a
   record that was already correct (re-runs must not double-apply).
 

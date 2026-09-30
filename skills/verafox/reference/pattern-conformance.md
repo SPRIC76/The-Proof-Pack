@@ -8,18 +8,18 @@ The principle, as its author put it on 2026-09-22, and this file exists to make 
 > have an engineering or technical background, but could be anybody and have any
 > level of context, including none.
 
-The operative fact underneath it: **an agent writes what its neighbours wrote.**
+The operative fact underneath it: **an agent writes what its neighbors wrote.**
 Given a file to extend, it matches the surrounding style before it consults any
 rule, because the surrounding style is concrete and present and the rule is
 abstract and elsewhere. That is not a flaw to train out. It is the cheapest
-correct behaviour available to something with no context, and it is the property
+correct behavior available to something with no context, and it is the property
 to build on.
 
 It cuts both ways, and that is the whole design:
 
-- A correct neighbour makes correct work free.
-- An incorrect neighbour makes incorrect work free — **and each copy becomes a
-  new neighbour.** That is why an anti-pattern behaves like an infection rather
+- A correct neighbor makes correct work free.
+- An incorrect neighbor makes incorrect work free — **and each copy becomes a
+  new neighbor.** That is why an anti-pattern behaves like an infection rather
   than a defect: its growth rate is proportional to how much of it already
   exists.
 
@@ -39,7 +39,7 @@ The second is the one the principle names specifically — *"have not drifted on
 that it was not designed for"* — and it is the harder one, because nothing about
 any individual use looks wrong. A retry decorator that is correct on an outbound
 API call is a double-charge when someone copies it onto a payment service. The
-copier was being diligent. Diligence is exactly how it travelled.
+copier was being diligent. Diligence is exactly how it traveled.
 
 `featuremap.py --check` measures both: `antipattern` counted inside `files`, and
 `signature` counted **outside** `only_in`.

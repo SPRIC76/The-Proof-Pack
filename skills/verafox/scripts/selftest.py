@@ -114,6 +114,89 @@ def check(name, cond, detail=""):
         (detail and not cond) else ""))
 
 
+# A skill is modular: any agent that reads SKILL.md can run it, in any workflow,
+# beside any other skill or none (the owner, 2026-09-30). So a SKILL.md names a
+# neighbor by its job, never by its name, except on the one line that declares
+# an optional dependency; and it names an agent host only in an install section
+# that names at least two, as examples. The same check is in each of the pack's
+# self-tests, so each skill holds it alone. Names are the pack's and other public
+# skills', anywhere; and any skill installed beside this one, where a line points
+# at it as a skill: `name`, (name) or "name skill".
+KNOWN_SKILLS = ("verafox", "levjev", "testcatch", "measure-in-the-browser",
+                "verify-before-done", "rules-that-can-fail", "skillshaper",
+                "typesafe-ai", "frontend-design", "source-driven-development")
+HOSTS = ("Claude Code", "Claude", "Cursor", "Codex", "Copilot", "Windsurf",
+         "Gemini CLI", "Cline", "Aider")
+_OPTIONAL_LINE = re.compile(r"^\s*(?:[-*]\s*)?(?:optional_dependency|Optional dependency)\s*:")
+
+
+def installed_beside(skill_dir):
+    """Names of the skill folders beside this one (each holding a SKILL.md)."""
+    parent = os.path.dirname(os.path.abspath(skill_dir))
+    try:
+        return [n for n in os.listdir(parent)
+                if os.path.isfile(os.path.join(parent, n, "SKILL.md"))]
+    except OSError:
+        return []
+
+
+def skill_md_problems(text, own, beside=()):
+    """Each line of a SKILL.md that names another skill (outside a declared
+    optional-dependency line) or names an agent host outside an install section
+    naming two or more, as "line N: why". `own` is the skill's own name and
+    former names; `beside` the skills installed next to it."""
+    def alt(names):
+        return "|".join(map(re.escape, sorted(set(names) - set(own), key=len, reverse=True)))
+    known = re.compile(r"(?<![\w-])(%s)(?![\w-])" % alt(KNOWN_SKILLS), re.I)
+    near = [n for n in beside if len(n) >= 3 and n not in own]
+    nearby = re.compile(r"`(%s)`|\((%s)\)|(?<![\w-])(%s) skill\b" % ((alt(near),) * 3), re.I) \
+        if near else None
+    host_rx = re.compile(r"(?<![\w-])(%s)(?![\w-])" % "|".join(map(re.escape, HOSTS)))
+    lines, heads, section = text.split("\n"), {}, None
+    for i, ln in enumerate(lines):
+        if re.match(r"^#{1,6}\s", ln):
+            section = i
+        heads[i] = section
+    install_hosts = {}
+    for i, ln in enumerate(lines):
+        s = heads[i]
+        if s is not None and re.search(r"install", lines[s], re.I):
+            install_hosts.setdefault(s, set()).update(host_rx.findall(ln))
+    problems = []
+    for i, ln in enumerate(lines):
+        m = known.search(ln) or (nearby.search(ln) if nearby else None)
+        if m and not _OPTIONAL_LINE.match(ln):
+            name = next(g for g in m.groups() if g)
+            problems.append("line %d: names the skill %s - name its job instead" % (i + 1, name))
+        h = host_rx.search(ln)
+        if h and len(install_hosts.get(heads[i], ())) < 2:
+            problems.append("line %d: frames itself for %s - name hosts only as install "
+                            "examples, two or more" % (i + 1, h.group(1)))
+    return problems
+
+
+def agnostic_cases(skill_md, own):
+    """The check can fail, and this skill's own SKILL.md passes it."""
+    other = [n for n in KNOWN_SKILLS if n not in own][0]
+    bad = ("---\nname: x\ndescription: Not for how code works (%s).\n---\n\n# X\n\n"
+           "Built for Claude Code. Pair it with the `made-up-sibling` skill.\n" % other)
+    good = ("---\nname: x\ndescription: Not for how code works (a code-search tool).\n"
+            "metadata:\n  optional_dependency: %s, for one flag\n---\n\n# X\n\n"
+            "## Install\n\nCopy the folder where your agent reads skills (Claude Code, "
+            "Cursor, Codex or any other). A made-up-sibling mention in prose is fine.\n"
+            % other)
+    found = skill_md_problems(bad, own, ["made-up-sibling"])
+    check("the SKILL.md check can fail: a named skill, a skill installed beside it and "
+          "a one-host frame are each caught", len(found) == 3, repr(found))
+    found = skill_md_problems(good, own, ["made-up-sibling"])
+    check("...and passes a declared optional dependency and hosts as install examples",
+          found == [], repr(found))
+    with open(skill_md, encoding="utf-8") as fh:
+        found = skill_md_problems(fh.read(), own, installed_beside(os.path.dirname(skill_md)))
+    check("RED: this skill's SKILL.md names no other skill and frames itself for no "
+          "one host", not found, "\n".join(found))
+
+
 ENTRY = """### %s
 
 - name: %s
@@ -461,9 +544,9 @@ def main():
 
         # ------------------------------ 11 a label written as an expression
         # From one web app, 2026-09-23: `aria-label={`Unpin ${title}`}` and its kind
-        # labelled five real buttons that were neither mapped nor reported,
+        # labeled five real buttons that were neither mapped nor reported,
         # because the file was already claimed by the quoted labels beside them.
-        print("\n11. a control labelled by an expression, not a quoted string")
+        print("\n11. a control labeled by an expression, not a quoted string")
         k = os.path.join(tmp, "nine")
         os.makedirs(k)
         put(k, "src/pins.jsx",
@@ -508,7 +591,7 @@ def main():
               "Traceback" not in out and "SPREAD" in out and "\u2192" in out, out)
 
         # ------------------- 13 what the element is, not what sits nearby
-        # From one web app, 2026-09-23: its labelled Explain drawer was dropped
+        # From one web app, 2026-09-23: its labeled Explain drawer was dropped
         # because its buttons sat more than 300 characters below the label.
         print("\n13. a label names its own element, not whatever sits nearby")
         q = os.path.join(tmp, "eleven")
@@ -538,21 +621,21 @@ def main():
             ");\n")
         run(q, "--init")
         mp = open(os.path.join(q, "FEATURE-MAP.md"), encoding="utf-8").read()
-        check("a labelled landmark is a region, even with its buttons far below",
+        check("a labeled landmark is a region, even with its buttons far below",
               "`region.explain`" in mp, mp[-1800:])
-        check("a labelled group is a region, not a control",
+        check("a labeled group is a region, not a control",
               "`region.ticker-shortcuts`" in mp
               and "control.ticker-shortcuts" not in mp, mp[-1800:])
         check("a handler far from its label in the SAME tag still makes a control",
               "`control.expand-card`" in mp, mp[-1800:])
-        check("a labelled image beside a button is not minted into a control",
+        check("a labeled image beside a button is not minted into a control",
               "logo-mark" not in mp, mp[-1800:])
-        check("a plain labelled button is still a control",
+        check("a plain labeled button is still a control",
               "`control.refresh`" in mp, mp[-1800:])
-        check("a labelled plain container of controls is a region",
+        check("a labeled plain container of controls is a region",
               "`region.account`" in mp and "control.account" not in mp,
               mp[-1800:])
-        check("a labelled container with no control inside is not mapped",
+        check("a labeled container with no control inside is not mapped",
               "price-chart" not in mp, mp[-1800:])
 
         # ------------------------------ 14 a shortcut is a condition, not a literal
@@ -1218,7 +1301,7 @@ def main():
                 body += "### %s\n\n- name: %s\n- intent: %s\n- observable: %s\n\n" % (
                     fid, fid, intents[fid], obs[fid])
             author(t28, body + "### ui.banner\n\n- name: banner\n- intent: the "
-                   "banner warns in red\n- observable: the banner colour is "
+                   "banner warns in red\n- observable: the banner color is "
                    "#ff0000\n\n### ui.bare\n\n- name: bare\n- observable: x\n")
             rc, out = run(t28, "--judge", env=nokey)
             check("with no key nothing is asked, and it says what went unjudged",
@@ -1308,8 +1391,8 @@ def main():
                                timeout=120, env=fake)
             out = p.stdout.decode("utf-8", "replace")
             check("without the levjev skill beside it, --judge asks nothing and says why",
-                  p.returncode == 2 and "NOT JUDGED the levjev skill is not installed"
-                  in out and len(posts) == n, out)
+                  p.returncode == 2 and "NOT JUDGED the optional levjev skill (the Jev "
+                  "client) is not installed" in out and len(posts) == n, out)
             # The jev skill became LevJev on 2026-09-29, the one home for all
             # Jev integration. With levjev
             # beside it and no jev folder at all, --judge must reach the client.
@@ -1357,7 +1440,7 @@ def main():
               "env.first-name" not in mp and "env.second-name" not in mp, mp[-1500:])
 
         # ------------------------------ 30 what a ref snapshot cannot see is said
-        # Found while writing the bound for --ref: git archive honours
+        # Found while writing the bound for --ref: git archive honors
         # export-ignore, and a route in such a file vanished without a word.
         print("\n30. a file git archive leaves out is named, never silently skipped")
         t30 = os.path.join(tmp, "thirty")
@@ -1739,7 +1822,7 @@ def main():
 
         class H46(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                body = b"licence v1\n" if self.path == "/licenses/X.txt" else b"no"
+                body = b"license v1\n" if self.path == "/licenses/X.txt" else b"no"
                 self.send_response(200 if body != b"no" else 404)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
@@ -1755,7 +1838,7 @@ def main():
             t46 = os.path.join(tmp, "fortysix")
             os.makedirs(t46)
             put(t46, "app.py", APP_V1)
-            put(t46, "public/licenses/X.txt", "licence v1\n")
+            put(t46, "public/licenses/X.txt", "license v1\n")
             git(t46, "init", "-q")
             commit(t46, "c1")
             run(t46, "--init")
@@ -2723,8 +2806,11 @@ def main():
         git(t67, "init", "-q")
         commit(t67, "baseline")
         run(t67, "--init")
+        # notes.dev:12 was here until 1.4.9, when dev behind one dot became a
+        # host with a port-sized number (case 71); notes.dev:9 keeps dev's file
+        # side pinned.
         files67 = ("Dockerfile.test:3", ".env.local:2", "deploy.run:4", "index.page:9",
-                   "notes.dev:12")
+                   "notes.dev:9")
         hosts67 = ("app.example.com:8443", "example.com:443", "api.staging.test:8080",
                    "localhost:3000", "127.0.0.1:8080")
         author(t67, base39 + "### ui.files\n\n- name: files\n- surface: web-ui\n"
@@ -2763,6 +2849,284 @@ def main():
         bare68 = bare_flags(out)
         check("RED: --help gives every flag a line of help",
               rc == 0 and "--observable" in out and not bare68, " ".join(bare68) or out[-800:])
+
+        # ------------------------------ 69 a rewritten block, never collapsed
+        # verafox 1.4.7 (2026-09-30): its own ten cli.* pointers sat in an argparse
+        # block rewritten at 054b1eb. Re-recorded after the rewrite, --reaim carried
+        # every one through its proof onto 3414, the block's first line, and said
+        # the proof still held. A one-line pointer whose line was rewritten is found
+        # by the capability's derived flag, or named "rewritten: re-aim by hand",
+        # and --check fails until it is.
+        print("\n69. a pointer whose line is rewritten in a block is found by its flag")
+        t69 = os.path.join(tmp, "sixtynine")
+        os.makedirs(t69)
+        cli69 = ("import argparse\n\n\ndef main():\n"
+                 "    ap = argparse.ArgumentParser()\n"
+                 "    ap.add_argument(\"--alpha\", action=\"store_true\")\n"
+                 "    ap.add_argument(\"--beta\", action=\"store_true\")\n"
+                 "    ap.add_argument(\"--keep\", action=\"store_true\")\n"
+                 "    ap.add_argument(\"--gamma\", action=\"store_true\")\n"
+                 "    return ap.parse_args()\n\n\nif __name__ == \"__main__\":\n"
+                 "    main()\n")
+        put(t69, "cli.py", cli69)
+        git(t69, "init", "-q")
+        commit(t69, "baseline")
+        base69 = head(t69)
+        run(t69, "--init")
+        ptrs69 = (("cli.alpha", 6), ("cli.beta", 7), ("cli.keep", 8), ("cli.gamma", 9))
+
+        def map69(proof):
+            return "".join(ENTRY % (fid, fid[4:], "cli", "cli.py:%d @ %s" % (n, base69),
+                                    "DRIVEN", "%s @ %s" % (datetime.date.today(), proof))
+                           for fid, n in ptrs69)
+        author(t69, map69(base69))
+        commit(t69, "map written")
+        put(t69, "cli.py", cli69.replace(
+            "    ap.add_argument(\"--alpha\", action=\"store_true\")\n"
+            "    ap.add_argument(\"--beta\", action=\"store_true\")\n"
+            "    ap.add_argument(\"--keep\", action=\"store_true\")\n"
+            "    ap.add_argument(\"--gamma\", action=\"store_true\")\n",
+            "    # every flag says what it does\n"
+            "    ap.add_argument(\"--beta\", action=\"store_true\",\n"
+            "                    help=\"the second\")\n"
+            "    ap.add_argument(\"--keep\", action=\"store_true\")\n"
+            "    ap.add_argument(\"--alpha\", action=\"store_true\",\n"
+            "                    help=\"the first\")\n"
+            "    ap.add_argument(\"--delta\", action=\"store_true\",\n"
+            "                    help=\"gamma, renamed\")\n"))
+        commit(t69, "the argparse block rewritten: reordered, one renamed, one kept")
+        author(t69, map69(head(t69)))       # re-recorded after the rewrite
+        commit(t69, "proofs re-recorded after the rewrite")
+        rc, out = run(t69, "--check")
+        rows69 = dict((fid, [x for x in out.split("\n") if x.strip().startswith(fid + ":")])
+                      for fid, _ in ptrs69)
+        check("RED: --check names each rewritten pointer with its flag's line now",
+              rc == 1 and rows69["cli.alpha"] and "-> cli.py:10" in rows69["cli.alpha"][0]
+              and "REWRITTEN" in rows69["cli.alpha"][0]
+              and rows69["cli.beta"] and "REWRITTEN" in rows69["cli.beta"][0]
+              and rows69["cli.gamma"] and "rewritten: re-aim by hand" in rows69["cli.gamma"][0],
+              out[-3000:])
+        rc, out = run(t69, "--reaim")
+        said69 = dict((fid, " ".join(x for x in out.split("\n") if fid + ":" in x))
+                      for fid, _ in ptrs69)
+        with open(os.path.join(t69, "FEATURE-MAP.md"), encoding="utf-8") as fh:
+            code69 = dict(re.findall(r"### (cli\.\w+)\n(?:.*\n)*?- code: cli\.py:(\d+)",
+                                     fh.read()))
+        check("RED: --reaim re-aims a rewritten flag by its derived line, not the "
+              "block's first",
+              rc == 0 and code69.get("cli.alpha") == "10" and "rewritten" in said69["cli.alpha"]
+              and "--alpha" in said69["cli.alpha"], out[-3000:] + "\n" + repr(code69))
+        check("...one rewritten in place is named, not kept silently at its number",
+              code69.get("cli.beta") == "7" and "rewritten" in said69["cli.beta"],
+              out[-3000:])
+        check("...a renamed one is declined as rewritten: re-aim by hand, left as written",
+              code69.get("cli.gamma") == "9"
+              and "rewritten: re-aim by hand" in said69["cli.gamma"], out[-3000:])
+        check("...a kept flag whose text did not change moves as before",
+              code69.get("cli.keep") == "9", out[-3000:] + "\n" + repr(code69))
+        check("...and no rewritten pointer is said to keep its proof",
+              not any("still holds" in said69[f] for f in ("cli.alpha", "cli.beta",
+                                                            "cli.gamma"))
+              and "re-aimed 1 code range(s); the proof on each still holds" in out,
+              out[-3000:])
+        rc, out = run(t69, "--check")
+        rows69 = dict((fid, [x for x in out.split("\n") if x.strip().startswith(fid + ":")])
+                      for fid, _ in ptrs69)
+        check("...and --check still fails on the one left to re-aim by hand, alone",
+              rc == 1 and rows69["cli.gamma"]
+              and "rewritten: re-aim by hand" in rows69["cli.gamma"][0]
+              and not rows69["cli.alpha"] and not rows69["cli.beta"]
+              and not rows69["cli.keep"], out[-3000:])
+
+        # ------------------------------ 70 an old number that holds another flag
+        # levjev 1.0.5 (2026-09-30): cli.check-question's scripts/jev.py:266 was
+        # rewritten, and 266 came to hold --ping's line. --reaim and --check left
+        # it at 266 without a word. A project in a subfolder of its repository, as
+        # levjev is, with a proof taken before the rewrite.
+        print("\n70. an old line number that now holds another flag is not kept")
+        r70 = os.path.join(tmp, "seventy")
+        t70 = os.path.join(r70, "tool")
+        os.makedirs(t70)
+        jev70 = ("\"\"\"a client\"\"\"\nimport argparse\n\n\ndef main(argv=None):\n"
+                 "    ap = argparse.ArgumentParser()\n"
+                 "    ap.add_argument(\"--ping\", action=\"store_true\")\n"
+                 "    ap.add_argument(\"--model\", default=\"pin-1\")\n"
+                 "    ap.add_argument(\"--check-question\")\n"
+                 "    return ap.parse_args(argv)\n")
+        put(t70, "jev.py", jev70)
+        git(r70, "init", "-q")
+        commit(r70, "baseline")
+        base70 = head(r70)
+        run(t70, "--init")
+        author(t70, ENTRY % ("cli.check-question", "check-question", "cli",
+                             "jev.py:9 @ %s" % base70, "DRIVEN",
+                             "%s @ %s" % (datetime.date.today(), base70)))
+        commit(r70, "map written")
+        put(t70, "jev.py", "\"\"\"a client\n\nUpdated: every flag says what it does\"\"\"\n"
+            + jev70.split("\n", 1)[1].replace(
+                "    ap.add_argument(\"--ping\", action=\"store_true\")\n"
+                "    ap.add_argument(\"--model\", default=\"pin-1\")\n"
+                "    ap.add_argument(\"--check-question\")\n",
+                "    ap.add_argument(\"--ping\", action=\"store_true\",\n"
+                "                    help=\"one greeting\")\n"
+                "    ap.add_argument(\"--model\", default=\"pin-1\",\n"
+                "                    help=\"the model\")\n"
+                "    ap.add_argument(\"--check-question\", metavar=\"FILE\",\n"
+                "                    help=\"lint offline\")\n"))
+        commit(r70, "every flag says what it does")
+        rc, out = run(t70, "--check")
+        row70 = [x for x in out.split("\n") if x.strip().startswith("cli.check-question: jev.py")]
+        check("RED: --check names the pointer whose old line now holds --ping",
+              rc == 1 and row70 and "-> jev.py:13" in row70[0] and "REWRITTEN" in row70[0],
+              out[-3000:])
+        rc, out = run(t70, "--reaim")
+        said70 = " ".join(x for x in out.split("\n") if "cli.check-question:" in x)
+        with open(os.path.join(t70, "FEATURE-MAP.md"), encoding="utf-8") as fh:
+            map70 = fh.read()
+        check("RED: --reaim finds it at its flag's line and says its proof predates "
+              "the rewrite",
+              rc == 0 and "- code: jev.py:13 @ " in map70 and "rewritten" in said70
+              and "stale" in said70 and "still holds" not in out, out[-3000:])
+        rc, out = run(t70, "--check")
+        check("...and --check then fails on its stale proof, not on its pointer",
+              rc == 1 and "cli.check-question: verified @ %s" % base70 in out
+              and not [x for x in out.split("\n")
+                       if x.strip().startswith("cli.check-question: jev.py")],
+              out[-3000:])
+
+        # ------------------------------ 71 dev hosts behind one dot
+        # The pack's third review (2026-09-30): 1.4.7's one-dot rule knew only
+        # common TLDs, so myapp.test:8080, printer.local:631, api.localhost:3000,
+        # web.dev:443 and shop.app:8443 were named as missing files. Behind one
+        # dot a host may now end in a special-use name or in dev or app, with a
+        # two-to-five-digit port and lower-case labels. Where that meets a file
+        # name, a path that exists is a file (checked at its line), and a
+        # one-digit number, a capital or a leading dot is never a host.
+        print("\n71. dev and special-use hosts behind one dot, and the files beside them")
+        t71 = os.path.join(tmp, "seventyone")
+        os.makedirs(t71)
+        l71 = ["# line %d" % i for i in range(1, 41)]
+        put(t71, "big.py", "\n".join(l71) + "\n")
+        put(t71, "shop.app", "\n".join(l71) + "\n")
+        put(t71, "app.py", APP_V1)
+        git(t71, "init", "-q")
+        commit(t71, "baseline")
+        run(t71, "--init")
+        hosts71 = ("myapp.test:8080", "printer.local:631", "api.localhost:3000",
+                   "web.dev:443", "svc.internal:9000", "site.example:8080",
+                   "x.invalid:80", "notes.dev:12")
+        files71 = ("Dockerfile.test:3", ".env.local:2", "deploy.run:4", "index.page:9",
+                   "notes.dev:9", "Web.dev:443", "Notes.test:20")
+        vat71 = "%s @ %s" % (datetime.date.today(), head(t71))
+        author(t71, base39
+               + "### ui.devhosts\n\n- name: devhosts\n- surface: web-ui\n"
+               "- code: big.py:20-25\n- entry: served at %s\n- does: a fixture feature\n"
+               "- observable: a value read back\n- grade: UNKNOWN\n\n"
+               "### ui.devfiles\n\n- name: devfiles\n- surface: web-ui\n"
+               "- code: big.py:20-25\n- entry: see %s\n- does: a fixture feature\n"
+               "- observable: a value read back\n- grade: UNKNOWN\n\n"
+               % (", ".join(hosts71), ", ".join(files71))
+               + ENTRY % ("ui.shopfile", "shopfile", "web-ui", "shop.app:12", "DRIVEN",
+                          vat71))
+        commit(t71, "map written against these lines")
+        rc, out = run(t71, "--check")
+        check("RED: no dev or special-use host behind one dot is named as a missing "
+              "file (myapp.test:8080, printer.local:631, api.localhost:3000, "
+              "web.dev:443)",
+              not any(h in out for h in hosts71), out[-2500:])
+        check("...while each file-shaped name is, a missing notes.dev:9 among them",
+              rc == 1 and all("ui.devfiles -> %s" % f in out for f in files71),
+              out[-2500:])
+        put(t71, "shop.app", "# new 1\n# new 2\n# new 3\n" + "\n".join(l71) + "\n")
+        commit(t71, "three lines added above shop.app:12")
+        rc, out = run(t71, "--check")
+        check("...and shop.app:12, host-shaped but a file that exists, is checked as "
+              "a file: its moved line is named",
+              rc == 1 and "shop.app:15" in out and "ui.shopfile" in out, out[-2500:])
+
+        # ------------------------------ 72 one big handler lists in linear time
+        # The pack's third review (2026-09-30): 1.4.7 re-read a handler from its
+        # top for every shortcut, so one keydown handler holding 2,400 enclosed
+        # shortcuts took 40.7 s to --list, against 4.2 s at 1.4.6. 1.4.9 reads
+        # each handler once. The bound is generous - about ten times what 1.4.9
+        # takes on a slow machine - and 1.4.7's code misses it by far.
+        print("\n72. a keydown handler holding 4,800 shortcuts lists in linear time")
+        t72 = os.path.join(tmp, "seventytwo")
+        os.makedirs(t72)
+        body72 = "".join("  if (e.ctrlKey || e.metaKey) {\n    if (e.key === 'k') "
+                         "{ f(%d); }\n  }\n  if (e.key === 'q') { g(%d); }\n" % (i, i)
+                         for i in range(2400))
+        put(t72, "static/big.js", "document.addEventListener('keydown', (e) => {\n"
+            + body72 + "});\n")
+        put(t72, "app.py", APP_V1)
+        git(t72, "init", "-q")
+        commit(t72, "baseline")
+        t0 = time.time()
+        try:
+            rc, out = run(t72, "--list")
+        except subprocess.TimeoutExpired:
+            rc, out = None, "--list was stopped after 120 s"
+        took72 = time.time() - t0
+        ids72 = set(re.findall(r"\bkey\.[\w-]+", out))
+        check("RED: --list over 2,400 enclosed shortcuts and 2,400 plain ones in one "
+              "handler takes under 15 s (took %.1f s)" % took72,
+              rc == 0 and took72 < 15 and {"key.mod-k", "key.q"} <= ids72
+              and "key.k" not in ids72 and "key.mod-q" not in ids72,
+              " ".join(sorted(ids72)) + " " + out[-800:])
+
+        # ------------------------------ 73 names a job, not a skill; no one host
+        print("\n73. SKILL.md names no other skill and frames itself for no one host")
+        agnostic_cases(os.path.join(HERE, os.pardir, "SKILL.md"),
+                       ("verafox", "verify-before-done"))
+
+        # ------------------------------ 74 alone, without its optional Jev client
+        # The owner, 2026-09-30: each skill is modular and works in any workflow.
+        # This one's only dependency, the levjev client, serves --judge and the
+        # reading at --record; installed alone, everything else must run, and
+        # both must say by name what is missing and that it is optional, asking
+        # nothing.
+        print("\n74. installed alone, it runs, and names the optional client it lacks")
+        solo = os.path.join(tmp, "solo", "verafox")
+        shutil.copytree(os.path.join(HERE, os.pardir, "templates"),
+                        os.path.join(solo, "templates"))
+        os.makedirs(os.path.join(solo, "scripts"))
+        shutil.copy(FM, os.path.join(solo, "scripts"))
+        fm74 = os.path.join(solo, "scripts", "featuremap.py")
+        env74 = dict(SAFE, TYPESAFE_API_KEY="test-key-not-real")
+        t74 = os.path.join(tmp, "seventyfour")
+        os.makedirs(t74)
+        fixture(t74)
+
+        def solo74(*args):
+            p = subprocess.run([sys.executable, fm74, "--project", t74] + list(args),
+                               cwd=t74, capture_output=True, timeout=120, env=env74)
+            return p.returncode, p.stdout.decode("utf-8", "replace") + \
+                p.stderr.decode("utf-8", "replace")
+
+        rc_i, out_i = solo74("--init")
+        author(t74, "### endpoint.orders\n\n- name: orders\n- intent: a customer "
+               "finds the order they placed\n- observable: POST /orders returns 201\n\n")
+        rc_l, out_l = solo74("--list")
+        rc_c, out_c = solo74("--check")
+        check("installed alone, --init, --list and --check run without the Jev client",
+              rc_i == 0 and rc_l == 0 and rc_c in (0, 1) and "endpoint.orders" in out_l
+              and "Traceback" not in out_i + out_l + out_c, (out_i + out_l + out_c)[-1500:])
+        rc, out = solo74("--record", "--feature", "endpoint.orders", "--grade", "DRIVEN",
+                         "--result", "pass", "--observable", "GET /orders lists it")
+        rec74 = os.path.join(t74, ".verify", "proof", "endpoint.orders", "latest.json")
+        judged74 = {}
+        if os.path.exists(rec74):
+            with open(rec74, encoding="utf-8") as fh:
+                judged74 = json.load(fh).get("judged") or {}
+        check("RED: --record stores the proof and says the optional Jev client is missing, "
+              "by name, asking nothing",
+              rc == 0 and "recorded" in out
+              and "NOT JUDGED the optional levjev skill (the Jev client) is not installed"
+              in out and "Unavailable" not in out and "not_judged" in judged74, out[-1500:])
+        rc, out = solo74("--judge")
+        check("RED: --judge refuses by name, exit 2, and says the rest runs without it",
+              rc == 2 and "NOT JUDGED the optional levjev skill (the Jev client) is not "
+              "installed" in out and "everything but --judge" in out, out[-1500:])
 
     finally:
         _remove(tmp)

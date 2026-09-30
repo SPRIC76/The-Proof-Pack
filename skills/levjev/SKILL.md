@@ -1,9 +1,9 @@
 ---
 name: levjev
-description: LevJev (Leverage Jev) - one home for everything Jev, TypeSafe's System One model - typed judgments (a Noul probability, a Choice or a Score) asked one pinned way through scripts/jev.py, and repository search through scripts/search.py, which replaces jevgrep. The client enforces the rules in code - jev-1.13.0 pinned and aliases refused, no state addressed by index, one request per state, nothing Jev cannot do (counting, dates, math, hex/RGB/binary, generation), the key never printed, no threshold gating until validated on the operator's own data. Use when the user says LevJev, Jev, TypeSafe or jevgrep; whenever a judgment or a prompt-and-parse LLM step could become a typed decision; before sending any Jev question (lint it first); when choosing a confidence threshold; and to start on how, why or where behavior works in a repository, before broad text search. Not for exact symbols, strings or filenames (use grep). For TypeSafe's own docs use the vendor's typesafe-ai; where the two disagree, this one wins.
+description: LevJev (Leverage Jev) - one home for everything Jev, TypeSafe's System One model - typed judgments (a Noul probability, a Choice or a Score) asked one pinned way through scripts/jev.py, and repository search through scripts/search.py, which replaces jevgrep. The client enforces the rules in code - jev-1.13.0 pinned and aliases refused, no state addressed by index, one request per state, nothing Jev cannot do (counting, dates, math, hex/RGB/binary, generation), the key never printed, no threshold gating until validated on the operator's own data. Use when the user says LevJev, Jev, TypeSafe or jevgrep; whenever a judgment or a prompt-and-parse LLM step could become a typed decision; before sending any Jev question (lint it first); when choosing a confidence threshold; and to start on how, why or where behavior works in a repository, before broad text search. Not for exact symbols, strings or filenames (use grep). For TypeSafe's own docs use the vendor's own skill; where the two disagree, this one wins.
 metadata:
-  version: 1.0.5
-  merged_from: jev 1.0.0 (split from verafox 1.2.1 on 2026-09-24) and a repository search that replaces the third-party jevgrep (2026-09-29)
+  version: 1.0.6
+  merged_from: jev 1.0.0 (split from a verification skill's client on 2026-09-24) and a repository search that replaces the third-party jevgrep (2026-09-29)
   source: its author's standing order for TypeSafe's Jev, the first measured run (2026-09-21), and the finding that Jev was asked only a handful of times a day (2026-09-29)
   owner: SPRIC76
   enforcement: runtime-enforced (scripts/jev.py, scripts/search.py) + load-bearing (this file)
@@ -13,6 +13,14 @@ metadata:
 
 One home for all Jev integration. Everything that asks Jev lives here: the client
 every caller loads, and the repository search built on it.
+
+## Any agent, any workflow
+
+This folder is a skill in the Agent Skills format: any agent that reads SKILL.md
+can use it, and nothing here assumes one host, one editor or one install path.
+Both scripts use the Python standard library only and run from wherever the
+folder sits. Any tool or skill can load `scripts/jev.py` as its Jev client, and
+this one depends on no other skill.
 
 ## Jev: typed judgments
 
@@ -100,8 +108,8 @@ The level comes from the operator's own data, never from a vendor cookbook's num
 cases by hand before Jev sees them, record Jev's readings beside the labels, and set
 the thresholds so the costlier mistake does not pass. Until that table exists, a
 reading is something to look at and never a gate. Each caller keeps its own
-calibration. Verafox's `--judge`, which asks whether an entry's observable would
-show its intent was met, keeps its in `verafox/reference/jev-calibration.md`.
+calibration. A verification skill's `--judge`, which asks whether an entry's
+observable would show its intent was met, keeps its calibration in its own folder.
 
 ## Search a repository: how, why or where something works
 
@@ -163,9 +171,8 @@ subagent's instructions, and have it read the excerpts before searching again.
 
 ## TypeSafe's own skill
 
-`typesafe-ai` is TypeSafe's own skill, published by the vendor and not part of this
-pack: live docs, cookbooks and ideas for what Jev could do. Install it from TypeSafe
-to explore. It still teaches `ticket.messages[0].text`, which the
+TypeSafe publishes a skill of its own, not part of this pack: live docs, cookbooks
+and ideas for what Jev could do. Install it from TypeSafe to explore. It still teaches `ticket.messages[0].text`, which the
 measured rule forbids and this client refuses. Where the two disagree, this skill
 wins.
 
@@ -175,7 +182,7 @@ Run `python scripts/selftest.py` and `python scripts/search_selftest.py`, change
 thing, and run them again. Then break the
 thing you changed on purpose and confirm the suite goes red. Work on a **copy** of
 `scripts/` in a scratch folder and install the finished change in one step, because
-Verafox's `--judge` loads this client live. Moving the pin means editing `PIN` in
+another skill may load this client live (a verification skill's `--judge` does). Moving the pin means editing `PIN` in
 `jev.py`, with its selftest; every threshold calibrated on the old pin is
 unvalidated again.
 
@@ -189,3 +196,4 @@ unvalidated again.
 - `scripts/search.py`: the repository search. Standard library only; it asks Jev
   only through `jev.py`.
 - `scripts/search_selftest.py`: the search's cases, on the same fake TypeSafe.
+- `CHANGELOG.md`: what changed for someone upgrading, version by version from 1.0.3.

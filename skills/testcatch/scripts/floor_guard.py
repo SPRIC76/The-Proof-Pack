@@ -382,7 +382,7 @@ def go_body(lines, i, _indent):
 
 
 def tests_in(path, lines):
-    """[(name, normalised body, lineno)] for the tests this file declares."""
+    """[(name, normalized body, lineno)] for the tests this file declares."""
     ext = os.path.splitext(path)[1]
     if ext == ".py":
         rx, body = PY_TEST, py_body
@@ -484,7 +484,7 @@ class Finding:
 
 # ------------------------------------------------------------------ analysis
 
-def analyse(path, old, new, findings, notes):
+def analyze(path, old, new, findings, notes):
     """old and new are the file's text at base and now ('' when absent, or
     when the file was renamed to a name that no longer does its job)."""
     ol, nl = old.splitlines(), new.splitlines()
@@ -816,9 +816,9 @@ def guard(args):
             continue
         if st in "RC" and ((is_ci(old_path) and not is_ci(new_path))
                            or (is_config(old_path) and not is_config(new_path))):
-            analyse(old_path, text_of(old), "", findings, notes)
+            analyze(old_path, text_of(old), "", findings, notes)
             continue
-        analyse(new_path, text_of(old), text_of(new), findings, notes)
+        analyze(new_path, text_of(old), text_of(new), findings, notes)
 
     for old_path in pending_deleted:
         old = read_base(root, mb, old_path)
@@ -836,7 +836,7 @@ def guard(args):
                 findings.append(Finding("test-file-deleted", old_path, None, True,
                                         DELETED, DELETED))
             elif is_test(match):
-                analyse(match, text_of(old), text_of(old), findings, notes)
+                analyze(match, text_of(old), text_of(old), findings, notes)
             else:
                 findings.append(Finding("test-file-renamed-away", old_path, None, True,
                                         match, "%s -> %s (not staged)" % (old_path, match)))
@@ -844,7 +844,7 @@ def guard(args):
                 and is_config(match) == is_config(old_path):
             continue                        # moved, still doing its job
         else:
-            analyse(old_path, text_of(old), "", findings, notes)
+            analyze(old_path, text_of(old), "", findings, notes)
 
     for u in untracked:
         if u in consumed or ignored(u):
@@ -855,7 +855,7 @@ def guard(args):
         if is_binary(new):
             binaries.append(u)
             continue
-        analyse(u, "", text_of(new), findings, notes)
+        analyze(u, "", text_of(new), findings, notes)
 
     print("floor guard %s: %s" % (VERSION, root))
     print("  base %s = %s (merge-base with HEAD); %d files differ (%d untracked)%s"

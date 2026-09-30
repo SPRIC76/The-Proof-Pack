@@ -22,6 +22,7 @@ absence check passes against a guard that does nothing: the first red run
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -39,6 +40,89 @@ def check(name, cond, detail=""):
     print(("  ok   " if cond else "  FAIL ") + name + (
         ("\n         " + str(detail).replace("\n", "\n         ")[:3000]) if
         (detail and not cond) else ""))
+
+
+# A skill is modular: any agent that reads SKILL.md can run it, in any workflow,
+# beside any other skill or none (the owner, 2026-09-30). So a SKILL.md names a
+# neighbor by its job, never by its name, except on the one line that declares
+# an optional dependency; and it names an agent host only in an install section
+# that names at least two, as examples. The same check is in each of the pack's
+# self-tests, so each skill holds it alone. Names are the pack's and other public
+# skills', anywhere; and any skill installed beside this one, where a line points
+# at it as a skill: `name`, (name) or "name skill".
+KNOWN_SKILLS = ("verafox", "levjev", "testcatch", "measure-in-the-browser",
+                "verify-before-done", "rules-that-can-fail", "skillshaper",
+                "typesafe-ai", "frontend-design", "source-driven-development")
+HOSTS = ("Claude Code", "Claude", "Cursor", "Codex", "Copilot", "Windsurf",
+         "Gemini CLI", "Cline", "Aider")
+_OPTIONAL_LINE = re.compile(r"^\s*(?:[-*]\s*)?(?:optional_dependency|Optional dependency)\s*:")
+
+
+def installed_beside(skill_dir):
+    """Names of the skill folders beside this one (each holding a SKILL.md)."""
+    parent = os.path.dirname(os.path.abspath(skill_dir))
+    try:
+        return [n for n in os.listdir(parent)
+                if os.path.isfile(os.path.join(parent, n, "SKILL.md"))]
+    except OSError:
+        return []
+
+
+def skill_md_problems(text, own, beside=()):
+    """Each line of a SKILL.md that names another skill (outside a declared
+    optional-dependency line) or names an agent host outside an install section
+    naming two or more, as "line N: why". `own` is the skill's own name and
+    former names; `beside` the skills installed next to it."""
+    def alt(names):
+        return "|".join(map(re.escape, sorted(set(names) - set(own), key=len, reverse=True)))
+    known = re.compile(r"(?<![\w-])(%s)(?![\w-])" % alt(KNOWN_SKILLS), re.I)
+    near = [n for n in beside if len(n) >= 3 and n not in own]
+    nearby = re.compile(r"`(%s)`|\((%s)\)|(?<![\w-])(%s) skill\b" % ((alt(near),) * 3), re.I) \
+        if near else None
+    host_rx = re.compile(r"(?<![\w-])(%s)(?![\w-])" % "|".join(map(re.escape, HOSTS)))
+    lines, heads, section = text.split("\n"), {}, None
+    for i, ln in enumerate(lines):
+        if re.match(r"^#{1,6}\s", ln):
+            section = i
+        heads[i] = section
+    install_hosts = {}
+    for i, ln in enumerate(lines):
+        s = heads[i]
+        if s is not None and re.search(r"install", lines[s], re.I):
+            install_hosts.setdefault(s, set()).update(host_rx.findall(ln))
+    problems = []
+    for i, ln in enumerate(lines):
+        m = known.search(ln) or (nearby.search(ln) if nearby else None)
+        if m and not _OPTIONAL_LINE.match(ln):
+            name = next(g for g in m.groups() if g)
+            problems.append("line %d: names the skill %s - name its job instead" % (i + 1, name))
+        h = host_rx.search(ln)
+        if h and len(install_hosts.get(heads[i], ())) < 2:
+            problems.append("line %d: frames itself for %s - name hosts only as install "
+                            "examples, two or more" % (i + 1, h.group(1)))
+    return problems
+
+
+def agnostic_cases(skill_md, own):
+    """The check can fail, and this skill's own SKILL.md passes it."""
+    other = [n for n in KNOWN_SKILLS if n not in own][0]
+    bad = ("---\nname: x\ndescription: Not for how code works (%s).\n---\n\n# X\n\n"
+           "Built for Claude Code. Pair it with the `made-up-sibling` skill.\n" % other)
+    good = ("---\nname: x\ndescription: Not for how code works (a code-search tool).\n"
+            "metadata:\n  optional_dependency: %s, for one flag\n---\n\n# X\n\n"
+            "## Install\n\nCopy the folder where your agent reads skills (Claude Code, "
+            "Cursor, Codex or any other). A made-up-sibling mention in prose is fine.\n"
+            % other)
+    found = skill_md_problems(bad, own, ["made-up-sibling"])
+    check("the SKILL.md check can fail: a named skill, a skill installed beside it and "
+          "a one-host frame are each caught", len(found) == 3, repr(found))
+    found = skill_md_problems(good, own, ["made-up-sibling"])
+    check("...and passes a declared optional dependency and hosts as install examples",
+          found == [], repr(found))
+    with open(skill_md, encoding="utf-8") as fh:
+        found = skill_md_problems(fh.read(), own, installed_beside(os.path.dirname(skill_md)))
+    check("RED: this skill's SKILL.md names no other skill and frames itself for no "
+          "one host", not found, "\n".join(found))
 
 
 def run(repo, *args):
@@ -500,7 +584,7 @@ def main():
 
         # ------------------------------------------------ 8 CI and test paths
         print("\n8. a CI step removed or softened, a test path excluded"
-              " (break: CI files not recognised, or a moved step read as removed)")
+              " (break: CI files not recognized, or a moved step read as removed)")
         h = new_repo(tmp, "eight", {
             ".github/workflows/ci.yml": CI_YML,
             "pytest.ini": "[pytest]\naddopts = -q\n",
@@ -839,6 +923,11 @@ def main():
         check("RED: the code suppression is named, and nothing in README.md is",
               rc == 1 and len(sup) == 1 and "src/a.py:1" in sup[0]
               and "README.md" not in out.split("FLOOR DROPPED")[-1], out)
+
+        # ------------------------------------------------ 13 no sibling by name, no one host
+        print("\n13. SKILL.md names no other skill and frames itself for no one host")
+        agnostic_cases(os.path.join(HERE, os.pardir, "SKILL.md"),
+                       ("testcatch", "rules-that-can-fail"))
 
         bad = [(rc, o) for rc, o in OUTPUTS
                if not o.rstrip().splitlines()

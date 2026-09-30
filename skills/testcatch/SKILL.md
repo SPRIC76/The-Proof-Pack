@@ -1,8 +1,8 @@
 ---
 name: testcatch
-description: Testcatch (formerly rules-that-can-fail) - how to write a test, guard or checker rule that will actually go red when the thing it protects is broken, prove it with a re-injection probe, and hold the test floor with floor_guard.py. Use when adding or reviewing any test, lint rule, assertion, safety check or regression case; before writing a test body, to name the break it catches; when an expected value is built by the code under test; when a test passes on the first run with no drama; when a fix turns an existing test red; when a design ruling is reversed; when a check has started failing every time; and before calling a change safe or reviewing any change that touches tests, test config or CI, a helper agent's included - a new skip, noqa or ts-ignore, a test or assertion gone, a tolerance or timeout loosened, a CI step dropped. Not for proving a change works end to end (verafox). Derived 2026-09-15 from the rule files of a real project, where each pattern below let a defect ship under a green run.
+description: Testcatch (formerly rules-that-can-fail) - how to write a test, guard or checker rule that will actually go red when the thing it protects is broken, prove it with a re-injection probe, and hold the test floor with floor_guard.py. Use when adding or reviewing any test, lint rule, assertion, safety check or regression case; before writing a test body, to name the break it catches; when an expected value is built by the code under test; when a test passes on the first run with no drama; when a fix turns an existing test red; when a design ruling is reversed; when a check has started failing every time; and before calling a change safe or reviewing any change that touches tests, test config or CI, a helper agent's included - a new skip, noqa or ts-ignore, a test or assertion gone, a tolerance or timeout loosened, a CI step dropped. Not for proving a change works end to end (a verification tool). Derived 2026-09-15 from the rule files of a real project, where each pattern below let a defect ship under a green run.
 metadata:
-  version: 1.2.3
+  version: 1.2.4
   renamed_from: rules-that-can-fail (2026-09-30)
   source: derived from the review record of a real project (2026-09)
   credits: "floor-guard contract (diff scoped, exit 0/1/2, 2 never clean) from addyosmani/agent-skills skills/constraint-driven-development/references/floor-guard.md @ 2686b620fc1fed2e8f60c704839c766b8594c6b6 (MIT); name the break, no mirror assertions and the mutation check from obra/superpowers skills/test-driven-development/writing-good-tests.md @ 8ca22dba9a94f28898bbce59f2537ff4d87c747d (MIT). Rewritten in its author's words and built as original code; no text or code copied."
@@ -14,6 +14,14 @@ metadata:
 A rule exists to fail before a defect ships. One that cannot fail is worse than no
 rule, because it reads as coverage. Every pattern below produced a green run over
 a real defect.
+
+## Any agent, any workflow
+
+This folder is a skill in the Agent Skills format: any agent that reads SKILL.md
+can use it, in any language's test suite, and nothing here assumes one host, one
+editor or one install path. `scripts/floor_guard.py` uses the Python standard
+library and git only, runs from wherever the folder sits, and depends on no other
+skill.
 
 ## Before the body: name the break
 
@@ -34,16 +42,16 @@ this test red, and whether that change is a bug or a decision.
 
 | Pattern | What happened | Write it instead |
 |---|---|---|
-| **Answered by a corpse** | `assertIn(literal, source)` passed after the feature was disabled — the string still sat in the dead branch. A DOTALL regex with no entry boundary was answered by a neighbouring entry. | Pin the expression that *decides*, anchored to its label, bounded to its entry. |
+| **Answered by a corpse** | `assertIn(literal, source)` passed after the feature was disabled — the string still sat in the dead branch. A DOTALL regex with no entry boundary was answered by a neighboring entry. | Pin the expression that *decides*, anchored to its label, bounded to its entry. |
 | **Passes on a dead declaration** | `assertIn('text-align: center;', block)` passed with a later `text-align: left;` in the same block. Order is the whole of CSS. | Parse the block, collect every declaration of the property, require exactly one, compare its value. |
 | **Pinned literal is the copy the rule forbids** | The rule asserted the shipped tile equals `tile(0.12, 0.12)`; when the generator's inputs changed, the rule was the stale copy. | Call the generator's own constants; never restate its inputs. |
 | **Derives its own threshold** | `spread * (LEVELS / spread) < LEVELS` — true of every wall ever built. | The rule and the code it grades must not share a source. Read the shipped value; compare to what the derivation says it should be. |
 | **Mirror assertion** | `want = face_line("KiT", TAGLINE)` then `assert face_line("KiT", TAGLINE) == want`. The code under test wrote both sides: a lost dash, an empty return and a swapped order all stayed green (2026-09-29). The expected-value form of *Derives its own threshold*. | Write the answer by hand: `== "KiT — Keep it Ticking."`, or a fixture checked by eye. That pins what the code must produce. Checking that a shipped file is still what its generator makes is a different test, and there calling the generator is right (*Pinned literal*). |
-| **Asserts against a field that never exists** | `assertIsNone(card.get('ma50'))` — the card never carried `ma50`. A node parse check read its own `argv[1]`. | Assert on the field the behaviour actually moves; make the negative case produce the value first. |
-| **A token passes by not being seen** | A three-digit hex was invisible to a six-digit regex, so the "every colour has a light answer" audit never asked. | Make the scanner reject what it cannot parse, rather than skip it. |
+| **Asserts against a field that never exists** | `assertIsNone(card.get('ma50'))` — the card never carried `ma50`. A node parse check read its own `argv[1]`. | Assert on the field the behavior actually moves; make the negative case produce the value first. |
+| **A token passes by not being seen** | A three-digit hex was invisible to a six-digit regex, so the "every color has a light answer" audit never asked. | Make the scanner reject what it cannot parse, rather than skip it. |
 | **A check that always fails** | A staleness check said STALE on every input because it carried its own second compiler. Nobody read it; it was silent about the one real staleness. | A warning that fires unconditionally carries no information — fix or delete it the day it starts. |
 | **An error is not a red test** | A rename made two rules raise `AttributeError`; a type change made `'Q' in some_dict` ask about keys. Both stopped measuring. | Treat an ERROR in a rules file as a rule pointing at nothing, not a harness nit. Re-point it before moving on. |
-| **A matching count in the wrong order** | Three colours for three bands, positions 2 and 3 swapped. | When zipping by position, check order, not only count. |
+| **A matching count in the wrong order** | Three colors for three bands, positions 2 and 3 swapped. | When zipping by position, check order, not only count. |
 | **An asset rule that pins the asset** | Filename, width, height and caption date were literals; refreshing the capture reddened all three with nothing wrong. | Find the filename by regex in the page, derive the date from it, read width and height out of the PNG's own header. |
 
 ## Before the test file is finished: the mutation check
@@ -51,14 +59,14 @@ this test red, and whether that change is a bug or a decision.
 Break the shipped code in your head, one fault at a time. For each fault that could
 really happen here, at least one test must go red:
 
-- **A wrong value:** a constant, an argument, an off-by-one, the neighbouring entry.
+- **A wrong value:** a constant, an argument, an off-by-one, the neighboring entry.
 - **The other branch:** the condition inverted, the fallback taken, the wrong handler.
 - **A missing effect:** the write, the flag, the log line, the file that should appear.
 - **An empty return:** `None`, `[]`, `0`, `""`, the default.
 - **An input nobody guarded:** zero, empty, missing, malformed, not allowed.
 - **The order swapped** (*A matching count in the wrong order*).
 
-A fault nothing catches is behaviour nobody protects, or a test that cannot fail.
+A fault nothing catches is behavior nobody protects, or a test that cannot fail.
 Write the missing test, or say in the change which fault is left unguarded and why.
 The check picks the faults; the probe below proves the ones you doubt.
 
@@ -142,7 +150,7 @@ upstream, else main, else master; `--base <ref>` picks another. Its own proof is
 - **A solved artifact must be regenerated, not patched.** When a downstream
   constant is a solver's answer for an upstream input (a ramp, a palette), the
   failing tests are reporting the truth; re-run the solver rather than raising
-  thresholds to colours it never verified.
+  thresholds to colors it never verified.
 
 ## Environment traps that silently corrupt a rule
 

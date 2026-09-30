@@ -9,7 +9,10 @@ WHAT IT DOES
     --reaim     move each hand-mapped `code:` or `entry:` range whose lines
                 moved (code added or removed above it) to where those lines
                 are now, stamped `@ <commit>` - the commit whose lines it is
-                in - and name each range it leaves, with why.
+                in - and name each range it leaves, with why. A one-line
+                pointer whose own line was rewritten goes to where the code
+                derives its capability, marked REWRITTEN, or is named
+                "rewritten: re-aim by hand", which fails --check.
     --record    append one capture record to the proof store and print the
                 analysis against the previous capture for that feature.
     --ratchet   lower every recorded ceiling to the count present. Never raises.
@@ -25,12 +28,13 @@ WHAT IT DOES
                 entry declares are requested; redirects are never followed.
     --judge     ask Jev, in one request, whether each entry's observable is
                 evidence of its intent - the Intended bar no test suite checks.
-                A reading, never a failure; needs the levjev skill installed
-                beside this one, and TYPESAFE_API_KEY.
+                A reading, never a failure; needs the optional levjev skill
+                (the Jev client) installed beside this one, and TYPESAFE_API_KEY.
 
 WHAT IT WILL NEVER DO
     Touch the AUTHORED half of a map, beyond --reaim moving a `code:` or
-    `entry:` pointer's numbers to where git measures its unchanged lines now,
+    `entry:` pointer's numbers to where git measures its unchanged lines now
+    (or, for a rewritten line, where the code derives its capability),
     stamped with the commit they are in - the judgment fields (what a feature is for,
     its observable, its negative contract, the operator's intent, the evidence
     grade) are written by a human or by an agent exercising judgment, and a
@@ -48,6 +52,7 @@ USAGE
         --metric duration_ms=812 --metric console_errors=0
 """
 import argparse
+import bisect
 import collections
 import json
 import os
@@ -484,8 +489,8 @@ def _label_value(text, m):
 # control; a label on an <aside> or a role="group" names a region of the page,
 # which is a feature too; a label on an image names neither. This used to be
 # guessed from any handler within 300 characters of the label, which dropped
-# a web app's labelled Explain drawer (its buttons sat further down) and minted a
-# "control" out of whatever labelled thing sat beside a button. The element's
+# a web app's labeled Explain drawer (its buttons sat further down) and minted a
+# "control" out of whatever labeled thing sat beside a button. The element's
 # own opening tag is read instead.
 _TAG_OPEN = re.compile(r"<([A-Za-z][\w.:-]*)")
 _ATTR_NAME = re.compile(r"[^\s=>/{}\"']+")
@@ -636,7 +641,7 @@ def _holds_control(text, name, start):
 
 
 def ex_controls(root, files):
-    """Controls and labelled regions that carry a durable selector. An onClick
+    """Controls and labeled regions that carry a durable selector. An onClick
     with no testid and no aria-label is deliberately NOT emitted as a feature: a
     CSS path would rot on the next refactor and a map built on rotting selectors
     is worse than a gap, because the gap is visible."""
@@ -714,7 +719,7 @@ _MOD_EITHER = re.compile(r"[\w$]+\.(?:ctrl|meta)Key\s*\|\|\s*[\w$]+\.(?:ctrl|met
 # Outside a shortcut's own condition the either-test counts in three forms
 # only: a guard that returns without it (braced or not), a local the condition
 # tests by name or a guard returns without, and an `if` whose block encloses
-# the condition (_enclosing_either). Read from anywhere above the condition, an
+# the condition (_HandlerMods). Read from anywhere above the condition, an
 # earlier sibling's `(e.ctrlKey || e.metaKey) && e.key === 'k'` leaked into the
 # next shortcut, and `e.altKey && e.key === 'h'` was minted as key.mod-alt-h
 # (the pack's review, 2026-09-30); read from the condition alone, a braced
@@ -839,45 +844,101 @@ def _branch_block(text, g):
     return (q + o.end(), e) if e > 0 else None
 
 
-def _enclosing_either(text, lo, start):
-    """True when an `if` between lo and start tests `(e.ctrlKey || e.metaKey)`,
-    or a local holding it, un-negated, and its block is still open at start:
-    `if (e.ctrlKey || e.metaKey) { if (e.key === 'k') ... }` is Ctrl/Cmd+K. A
-    sibling's block has closed before the next shortcut, and `if (!(a || b))
-    { ... }` is the opposite of mod, so neither counts."""
-    aliases = [m.group(1) for m in _MOD_ALIAS.finditer(text, lo, start)]
-    for m in re.compile(r"\bif\s*\(").finditer(text, lo, start):
-        q = _match_brace(text, m.end() - 1, "(", ")")
-        if q < 0 or q >= start:
-            continue                    # the shortcut's own condition, or unreadable
-        cond = text[m.end():q]
-        hit = (_MOD_EITHER.search(cond)
-               and not re.search(r"!\s*\(\s*" + _MOD_EITHER.pattern, cond)) or any(
-            re.search(r"(?<![\w$.!])%s(?![\w$])" % re.escape(a), cond) for a in aliases)
-        o = re.match(r"\s*\{", text[q + 1:q + 40]) if hit else None
-        if o and _match_brace(text, q + o.end()) > start:
-            return True
-    return False
+_IF_OPEN = re.compile(r"\bif\s*\(")
+_NOT_EITHER = re.compile(r"!\s*\(\s*" + _MOD_EITHER.pattern)
 
 
-def _modifiers(guard_ctx, condition, enclosed=False):
-    """Modifiers a shortcut demands: a guard earlier in its handler
-    (`if (!e.altKey) return`, braced or not) or a conjunction in its own
+class _HandlerMods:
+    """What a keyboard handler's text says about modifiers above any point in
+    it, read once per handler. Before 1.4.9 each shortcut re-read its handler
+    from the top, so one handler holding 2,400 shortcuts took 40.7 s to list
+    against 4.2 s at 1.4.6 (the pack's third review, 2026-09-30). Now every
+    guard, local and either-block is found once, with the offset from which it
+    counts, and each shortcut asks by offset: linear in the handler's size.
+
+    - guards: `if (!e.altKey) return` (braced or not) gives alt from its end;
+    - either_guard: `if (!(e.ctrlKey || e.metaKey)) return` gives mod from its end;
+    - aliases: `const mod = e.ctrlKey || e.metaKey`, from the end of its first
+      definition; a guard that returns without it (`if (!mod) return`) gives
+      mod from that guard's end;
+    - blocks: an `if` testing the either-test or an alias, un-negated, whose
+      `{ ... }` block holds the shortcut: `if (e.ctrlKey || e.metaKey) { if
+      (e.key === 'k') ... }` is Ctrl/Cmd+K. A sibling's block has closed before
+      the next shortcut, and `if (!(a || b)) { ... }` is the opposite of mod,
+      so neither counts."""
+
+    def __init__(self, text, lo, hi):
+        self.guard_ends, self.guard_mods, seen = [], [], frozenset()
+        for m in _MOD_GUARD.finditer(text, lo, hi):
+            seen = seen | {m.group(1)}
+            self.guard_ends.append(m.end())
+            self.guard_mods.append(seen)
+        g = _MOD_EITHER_GUARD.search(text, lo, hi)
+        first = [g.end()] if g else []
+        self.aliases = {}
+        for m in _MOD_ALIAS.finditer(text, lo, hi):
+            self.aliases.setdefault(m.group(1), m.end())
+        self.alias_rx = {}
+        for a, at in self.aliases.items():
+            self.alias_rx[a] = re.compile(r"(?<![\w$.])%s(?![\w$])" % re.escape(a))
+            g = re.compile(r"!\s*%s\s*\)\s*\{?\s*return\b" % re.escape(a)).search(
+                text, lo, hi)
+            if g:
+                first.append(max(at, g.end()))
+        self.either_from = min(first) if first else None
+        spans = []
+        for m in _IF_OPEN.finditer(text, lo, hi):
+            q = _match_brace(text, m.end() - 1, "(", ")")
+            if q < 0:
+                continue
+            cond = text[m.end():q]
+            if _MOD_EITHER.search(cond) and not _NOT_EITHER.search(cond):
+                start = q + 1
+            else:
+                ats = [at for a, at in self.aliases.items()
+                       if re.search(r"(?<![\w$.!])%s(?![\w$])" % re.escape(a), cond)]
+                if not ats:
+                    continue
+                start = max(q + 1, min(ats))
+            o = re.match(r"\s*\{", text[q + 1:q + 40])
+            e = _match_brace(text, q + o.end()) if o else -1
+            if e > start:
+                spans.append((start, e))
+        self.block_starts, self.block_ends = [], []
+        for s, e in sorted(spans):                  # merged: one lookup per shortcut
+            if self.block_ends and s <= self.block_ends[-1]:
+                self.block_ends[-1] = max(self.block_ends[-1], e)
+            else:
+                self.block_starts.append(s)
+                self.block_ends.append(e)
+
+    def enclosed(self, at):
+        """True when an either-block is open at offset `at`."""
+        i = bisect.bisect_right(self.block_starts, at) - 1
+        return i >= 0 and at < self.block_ends[i]
+
+    def above(self, at):
+        """(guard modifiers, either from a guard, aliases defined) above `at`."""
+        i = bisect.bisect_right(self.guard_ends, at) - 1
+        return (set(self.guard_mods[i]) if i >= 0 else set(),
+                self.either_from is not None and self.either_from <= at,
+                [a for a, e in self.aliases.items() if e <= at])
+
+
+def _modifiers(handler, at, condition):
+    """Modifiers a shortcut at offset `at` demands: a guard earlier in its
+    handler (`if (!e.altKey) return`, braced or not) or a conjunction in its own
     condition (`e.altKey && ...`). `(e.ctrlKey || e.metaKey)` is `mod` - Ctrl
     on Windows, Cmd on a Mac - in the condition, in a guard (`if (!(a || b))
     return`), in a local the condition tests or a guard returns without
     (`const mod = a || b`), or in an `if` whose block holds the condition
-    (enclosed, from _enclosing_either); an earlier sibling's condition is not
-    this shortcut's, and its modifiers stay there. Anything subtler is not
-    guessed at."""
-    mods = set(m.group(1) for m in _MOD_GUARD.finditer(guard_ctx))
+    (_HandlerMods); an earlier sibling's condition is not this shortcut's, and
+    its modifiers stay there. Anything subtler is not guessed at. `handler` is
+    None outside any listener this can follow: the condition alone counts."""
+    mods, either, aliases = handler.above(at) if handler else (set(), False, [])
     mods.update(m.group(1) for m in _MOD_AND.finditer(condition))
-    aliases = [m.group(1) for m in _MOD_ALIAS.finditer(guard_ctx)]
-    either = enclosed or _MOD_EITHER.search(condition) or _MOD_EITHER_GUARD.search(
-        guard_ctx) or any(
-        re.search(r"(?<![\w$.])%s(?![\w$])" % re.escape(a), condition)
-        or re.search(r"!\s*%s\s*\)\s*\{?\s*return\b" % re.escape(a), guard_ctx)
-        for a in aliases)
+    either = either or (handler and handler.enclosed(at)) or _MOD_EITHER.search(
+        condition) or any(handler.alias_rx[a].search(condition) for a in aliases)
     if either:
         mods = (mods - {"ctrl", "meta"}) | {"mod"}
     return [x for x in ("mod", "ctrl", "alt", "shift", "meta") if x in mods]
@@ -914,7 +975,7 @@ def ex_keyboard(root, files):
                 groups[-1].append(m)
             else:
                 groups.append([m])
-        found, minted = False, []
+        found, minted, handlers, newlines = False, [], {}, None
         for g in groups:
             start, end = g[0].start(), g[-1].end()
             inside = [s for s in scopes if s[0] <= start < s[1]]
@@ -926,15 +987,19 @@ def ex_keyboard(root, files):
             for k in raw:
                 if _key_name(k) not in names:
                     names.append(_key_name(k))
-            if any(blk and blk[0] < start < blk[1] and set(names) <= nm
+            # Groups come in order, so a block that has closed stays closed:
+            # only the open ones are kept, and the test stays linear.
+            minted = [x for x in minted if x[0][1] > start]
+            if any(blk[0] < start and set(names) <= nm
                    and sc == scope for blk, nm, sc in minted):
                 continue  # a branch of the shortcut whose block this is in
             found = True
             b = max(text.rfind(";", 0, start), text.rfind("{", 0, start),
                     text.rfind("}", 0, start))
-            mods = _modifiers(text[scope[0]:start] if scope else "",
-                              text[b + 1:end],
-                              bool(scope) and _enclosing_either(text, scope[0], start))
+            if scope and scope[:2] not in handlers:
+                handlers[scope[:2]] = _HandlerMods(text, scope[0], scope[1])
+            mods = _modifiers(handlers[scope[:2]] if scope else None, start,
+                              text[b + 1:end])
             if scope and scope[2] == "element" and set(names) <= {"enter", "space"} \
                     and scope[3] and (_attr_word(scope[3][1].get("role"))
                                       in _ACTIVATABLE_ROLES
@@ -955,9 +1020,13 @@ def ex_keyboard(root, files):
                     keys)
             else:
                 how = "key test outside any listener this can follow: %s" % keys
-            line = text.count("\n", 0, start) + 1
+            if newlines is None:
+                newlines = [m.start() for m in re.finditer("\n", text)]
+            line = bisect.bisect_left(newlines, start) + 1
             out.append((fid, "web-ui", "%s:%d" % (r, line), how))
-            minted.append((_branch_block(text, g), set(names), scope))
+            blk = _branch_block(text, g)
+            if blk:
+                minted.append((blk, set(names), scope))
         if found:
             claimed.append(r)
     return out, claimed
@@ -1543,7 +1612,7 @@ def _between(text, a, b):
 
 # ------------------------------------------------------- pattern conformance
 # An agent with no context copies the nearest example. That makes a codebase its
-# own memory, and it makes an anti-pattern contagious: one bad neighbour becomes
+# own memory, and it makes an anti-pattern contagious: one bad neighbor becomes
 # the template for everything written next to it. The ratchet below is what
 # makes "do it the right way" the cheapest path rather than the virtuous one -
 # existing violations are grandfathered at a recorded ceiling, and any NEW
@@ -1562,7 +1631,7 @@ def pattern_hits(root, pat, files, mode="antipattern"):
     is the obvious one:
 
     `antipattern` - the WRONG way, counted wherever it appears inside `files`.
-    This is contagion: one bad neighbour becomes the template for what gets
+    This is contagion: one bad neighbor becomes the template for what gets
     written next to it.
 
     `spread` - the RIGHT way, counted wherever it appears OUTSIDE `only_in`.
@@ -1816,30 +1885,47 @@ _POINTER = re.compile(
     r"(?:\s*@\s*([0-9a-fA-F]{7,40})\b)?(?![\w/-])")
 # A host with a port (app.example.com:8443) is not a file with a line
 # (Layout.astro:138), and neither is it a file whose extension happens to be a
-# TLD (Dockerfile.test:3, .env.local:2). A host has a host's shape: lower-case
-# labels, a port of two to five digits, and a last label that is a TLD - behind
-# one dot only when that TLD is not also a common file extension or word
-# (_HOST_TLDS), behind two dots when it is (_HOST_LABELS). A file's extension is
-# never on either list (.py, .md, .sh, .rs, .in, .so stay file-shaped). The
-# pack's review read app.example.com:8443 as a missing file; its second review
-# found the allow-list that fixed it hid Dockerfile.test:3, .env.local:2,
-# deploy.run:4 and index.page:9 (2026-09-30).
+# TLD (Dockerfile.test:3, .env.local:2). The rule, in order:
+# 1. A path that exists under the project is a file, whatever its shape.
+# 2. Otherwise a token is a host when every label is lower-case letters, digits
+#    and inner hyphens, its number is a port of two to five digits, and its last
+#    label is
+#    - behind one dot: a TLD (_HOST_TLDS), a special-use name (_HOST_SPECIAL:
+#      test, local, localhost, internal, example, invalid - RFC 2606, RFC 6761
+#      and mDNS), or dev or app, real TLDs that are also extensions (_HOST_DEV);
+#    - behind two dots or more: any of those, or a TLD that is also a word such
+#      as run, page or site (_HOST_LABELS).
+# 3. Anything else with an extension is a file, and --check names it when it
+#    does not exist.
+# Where the two meet, the name wins over the extension: a missing
+# `notes.dev:12` or `fixtures.test:20` is read as a host, while `notes.dev:9`
+# (a one-digit number), `Dockerfile.test:3` (a capital), `.env.local:2` (an
+# empty first label), `deploy.run:4` and `index.page:9` stay files, and a
+# `notes.dev` that exists is checked as a file at its line. The pack's review
+# read app.example.com:8443 as a missing file; its second review found the
+# allow-list that fixed it hid Dockerfile.test:3 and the rest; its third found
+# the one-dot rule read myapp.test:8080, printer.local:631, api.localhost:3000,
+# web.dev:443 and shop.app:8443 as missing files (2026-09-30).
 _HOST_TLDS = frozenset(
     "com net org io ai co me us uk eu de fr ca au jp cn ru br it nl se ch es xyz biz "
     "tv gg ly edu gov mil int".split())
-_HOST_LABELS = _HOST_TLDS | frozenset(
-    "dev app site page cloud local internal localhost test example invalid home lan "
-    "tech info link live run host online store shop blog email mail".split())
+_HOST_SPECIAL = frozenset("test local localhost internal example invalid".split())
+_HOST_DEV = frozenset(("dev", "app"))
+_HOST_ONE_DOT = _HOST_TLDS | _HOST_SPECIAL | _HOST_DEV
+_HOST_LABELS = _HOST_ONE_DOT | frozenset(
+    "site page cloud home lan tech info link live run host online store shop blog "
+    "email mail".split())
 
 
 def _host_shaped(token, number):
-    """app.example.com with 8443, example.com with 443: a dotted lower-case
-    name with a TLD for its last label, and a port-sized number."""
+    """app.example.com with 8443, myapp.test with 8080, web.dev with 443: a
+    dotted lower-case name whose last label a host can end in, and a port-sized
+    number. A path that exists is read as a file before this is asked."""
     labels = token.split(".")
     if not 2 <= len(number) <= 5 or len(labels) < 2 or not all(
             re.match(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", x) for x in labels):
         return False
-    return labels[-1] in (_HOST_LABELS if len(labels) > 2 else _HOST_TLDS)
+    return labels[-1] in (_HOST_LABELS if len(labels) > 2 else _HOST_ONE_DOT)
 
 
 def _pathlike(token, number):
@@ -1853,7 +1939,11 @@ def _pathlike(token, number):
 
 Ptr = collections.namedtuple(
     "Ptr", "line fid field path lo hi dash tick stamp start end blame exists")
-Move = collections.namedtuple("Move", "ptr base via now reason")
+# `rewritten`: "" for a move of unchanged lines; "found" for a one-line pointer
+# whose own line was rewritten and is found again by what the code derives;
+# "by hand" for one found by nothing (its `now` is then None).
+Move = collections.namedtuple("Move", "ptr base via now reason rewritten",
+                              defaults=("",))
 
 
 def _scan_pointers(root, text):
@@ -1939,6 +2029,74 @@ def _said(mv, span):
     return "%s: %s -> %s" % (mv.ptr.fid, _ptr_text(mv.ptr), _ptr_text(mv.ptr, span))
 
 
+def _file_lines(root, commit, path, shown):
+    """`path`'s lines at `commit`, or None. `./` reads the path from the
+    project folder, as a pointer names it, where the project is a subfolder of
+    its repository (levjev, verafox) as well as at its root."""
+    key = (commit, path)
+    if key not in shown:
+        ok, out = git(root, "show", "%s:./%s" % (commit, path))
+        shown[key] = out.split("\n") if ok else None
+    return shown[key]
+
+
+def _rewritten(root, ptr, base, hunks, proof, anchors, shown, diff):
+    """A Move for a one-line pointer whose own line is inside a change since
+    `base`. Found again when its text sits unchanged in that change's newer
+    side exactly once (a plain move), else when the code derives the entry's
+    capability on exactly one line of that newer side - its flag, key or route
+    (`rewritten` "found", the move carrying no proof). Else `rewritten` "by
+    hand" and `now` None: a number kept or a change's edge names other code."""
+    old = _file_lines(root, base, ptr.path, shown)
+    new = read(os.path.join(root, ptr.path)).split("\n")
+    text = old[ptr.lo - 1].strip() if old and ptr.lo <= len(old) else None
+    hunk = [h for h in hunks if h[1] and h[0] <= ptr.lo <= h[0] + h[1] - 1]
+    c, d = hunk[0][2:] if hunk else (1, 0)
+    side = [n for n in range(c, c + d) if n <= len(new)]
+    same = [n for n in side if text and re.search(r"\w\w", text)
+            and new[n - 1].strip() == text]
+    if len(same) == 1:
+        return Move(ptr, base, ", its line unchanged inside a change", (same[0],) * 2, "")
+    lines, what = anchors(ptr.fid, ptr.path)
+    inside = [n for n in lines if n in side]
+    # git splits a rewritten block into several hunks around a kept line, so
+    # the capability's line now may sit in the next one (verafox's --alpha
+    # case, selftest 69). Outside the pointer's own hunk the derived line is
+    # taken only when the old line named the capability itself.
+    named = ("-%s-" % ptr.fid.partition(".")[2]) in (
+        "-%s-" % re.sub(r"[^a-z0-9]+", "-", (text or "").lower()))
+    if not inside and named and len(lines) == 1:
+        inside = lines
+    quoted = '"%s"' % (text[:40] + ("..." if len(text) > 40 else "")) if text else \
+        "(no such line)"
+    if len(inside) != 1:
+        where = ("; the code derives it at %s now, away from that change, and its "
+                 "old line did not name it"
+                 % ", ".join("%s:%d" % (ptr.path, n) for n in lines)) if lines and \
+            not inside else ("; the code derives it on %d lines of that change"
+                             % len(inside)) if inside else ""
+        return Move(ptr, base, "", None,
+                    "rewritten: re-aim by hand - its line, %s, is not in the file "
+                    "unchanged, and nothing derived names one line for it%s"
+                    % (quoted, where), "by hand")
+    n = inside[0]
+    if proof and not (base.startswith(proof) or proof.startswith(base)) and git(
+            root, "merge-base", "--is-ancestor", base, proof)[0]:
+        after = diff(proof, ptr.path)
+        if after is not None and not any(_touches(h, (n, n), 1) for h in after):
+            note = ("its proof @ %s was taken after the rewrite; --check holds it "
+                    "to that" % proof)
+        else:
+            note = ("its line changed after its proof @ %s, so that proof is stale - "
+                    "re-drive it" % proof)
+    elif proof:
+        note = "its proof @ %s predates the rewrite, so it is stale - re-drive it" % proof
+    else:
+        note = "no DRIVEN or TESTED proof covers the rewrite - re-drive it"
+    return Move(ptr, base, "its line, %s, was rewritten; found by its derived %s"
+                % (quoted, what), (n, n), note, "found")
+
+
 def _moved_pointers(root, mp, text):
     """(moved, declined, dangling, unplaced). `moved`: every pointer whose
     lines moved since the commit its numbers are in (_base), where the code in
@@ -1949,7 +2107,10 @@ def _moved_pointers(root, mp, text):
     (a section of a static site, 2026-09-30). `dangling`: a stamp naming no
     commit here, read by blame instead. `unplaced`: not committed and
     unstamped, read in today's lines - right when written, wrong once HEAD
-    moves past commits touching the file, which --check says."""
+    moves past commits touching the file, which --check says. A one-line
+    pointer whose own line changed is read by _rewritten, never carried to a
+    change's edge: in `moved` when found again, in `declined` with `now` None
+    when not."""
     # A graded proof taken after the map line was written covers every change
     # made in between, so a change inside the range before the proof is no
     # reason to leave it pointing at the wrong lines: carry it through the
@@ -1960,11 +2121,29 @@ def _moved_pointers(root, mp, text):
         if m and (f.get("grade") or "").strip().upper() in ("DRIVEN", "TESTED"):
             proofs[fid] = m.group(1)
     moved, declined, dangling, unplaced, cache, known = [], [], [], [], {}, {}
+    shown, derived = {}, []
 
     def diff(*key):
         if key not in cache:
             cache[key] = _hunks(root, *key)
         return cache[key]
+
+    def anchors(fid, path):
+        """([line], what) - every line in `path` where the code derives `fid`
+        now, and how it is found there (`flag --check`). Derived once, and only
+        when a pointer's own line was rewritten."""
+        if not fid.startswith(DERIVED_PREFIXES):
+            return [], ""
+        if not derived:
+            derived.append(derive(root)[0])
+        f = derived[0].get(fid)
+        if not f:
+            return [], ""
+        note = f[3].split(" %s " % chr(0x2014))
+        locs = [f[2]] + [x for part in note if part.startswith("also at ")
+                         for x in re.findall(r"[\w./-]+:\d+", part)]
+        return sorted(set(int(n) for p, n in (x.rsplit(":", 1) for x in locs)
+                          if p == path)), note[0]
     for ptr in _pointers(root, mp, text) or []:
         if not ptr.exists:
             continue
@@ -1979,6 +2158,19 @@ def _moved_pointers(root, mp, text):
             continue
         now, via, why = _carry(hunks, ptr.lo, ptr.hi), "", ""
         proof = proofs.get(ptr.fid)
+        if now is None and not ptr.dash and ptr.lo > 1:
+            # One line, and a change on it. Carried through a proof, it took the
+            # change's first line - verafox's ten cli.* pointers all went to
+            # 3414, its argparse block's first line, "the proof still holds";
+            # declined, a number that did not move was dropped unsaid - levjev's
+            # cli.check-question stayed on 266, --ping's line now (1.4.7).
+            # Line 1 is exempt: `path:1` names the file itself, as the derived
+            # route., script. and ci. rows do, and a header rewritten around it
+            # leaves it the file's first line (KiT, selftest 56).
+            mv = _rewritten(root, ptr, base, hunks, proof, anchors, shown, diff)
+            if mv.rewritten or _ptr_text(ptr, mv.now) != _ptr_text(ptr):
+                (declined if mv.now is None else moved).append(mv)
+            continue
         if now is None and proof:
             why = "a change inside it postdates its proof @ %s" % proof
             if not (base.startswith(proof) or proof.startswith(base)) and git(
@@ -2050,11 +2242,7 @@ def _ends(root, mv, shown):
     reading that followed, faithful to those numbers, could not be told from a
     wrong one. An end whose line changed sits inside the hunk, and the number
     printed for it is that change's edge, not a line found by its text."""
-    key = (mv.base, mv.ptr.path)
-    if key not in shown:
-        ok, out = git(root, "show", "%s:%s" % (mv.base, mv.ptr.path))
-        shown[key] = out.split("\n") if ok else None
-    then = shown[key]
+    then = _file_lines(root, mv.base, mv.ptr.path, shown)
     now = read(os.path.join(root, mv.ptr.path)).split("\n")
 
     def at(lines, n):
@@ -2125,10 +2313,14 @@ def cmd_reaim(root, mp):
         edits.append((mv.ptr.line, mv.ptr.start, mv.ptr.end,
                       _ptr_text(mv.ptr, mv.now, write=True) + mv.ptr.tick
                       + (" @ %s" % stamp if stamp else "")))
-        print("  " + _said(mv, mv.now))
+        print("  " + _said(mv, mv.now) + (" REWRITTEN: %s; %s" % (mv.via, mv.reason)
+                                          if mv.rewritten else ""))
     if moved:
         write(mp, _rewrite(text, edits))
     for mv in declined:
+        if mv.rewritten:
+            print("  %s: %s not moved: %s" % (mv.ptr.fid, _ptr_text(mv.ptr), mv.reason))
+            continue
         print("  %s not moved: %s%s; re-drive it, then --reaim"
               % (_said(mv, mv.now), mv.reason,
                  "".join("; " + s for s in _ends(root, mv, shown))))
@@ -2136,17 +2328,32 @@ def cmd_reaim(root, mp):
         print("NOTE %s has changes not in HEAD, so the range(s) moved in it carry "
               "no `@ commit` and are read in today's lines - commit it with the "
               "map" % path)
-    if moved:
-        stamped = [s for s in known.values() if s]
+    plain = [mv for mv in moved if not mv.rewritten]
+    stamped = [s for s in known.values() if s]
+    stamped = (", each stamped `@ %s`, the commit whose lines it is in" % stamped[0]
+               if stamped and not unstamped else "")
+    if plain:
         print("re-aimed %d code range(s); the proof on each still holds - the lines "
               "moved, and the code in them did not change after its proof%s"
-              % (len(moved), ", each stamped `@ %s`, the commit whose lines it "
-                 "is in" % stamped[0] if stamped and not unstamped else ""))
-    if declined:
+              % (len(plain), stamped))
+    if len(moved) > len(plain):
+        # Never "still holds": the line a proof was taken on is not the line
+        # there now. Whether the proof came after the change is --check's.
+        print("re-aimed %d pointer(s) whose own line was rewritten, each to where "
+              "the code derives its capability now (named above, REWRITTEN)%s; the "
+              "move carries no proof - one taken before the rewrite is stale"
+              % (len(moved) - len(plain), stamped))
+    left = [mv for mv in declined if not mv.rewritten]
+    if left:
         print("%s%d range(s) left as written (named above): a change inside each "
               "is not covered by its proof - re-drive it, then --reaim, or set it "
               "by hand" % ("" if moved else "no code range was re-aimed; ",
-                           len(declined)))
+                           len(left)))
+    if len(declined) > len(left):
+        print("%d pointer(s) whose own line was rewritten left as written (named "
+              "above): neither its text nor anything the code derives finds it - "
+              "re-aim each by hand; --check fails until then"
+              % (len(declined) - len(left)))
     return 0
 
 
@@ -2300,7 +2507,7 @@ def cmd_check(root, mp):
     placed = (_pointers(root, mp, text) if ok_git else None) or []
     moved, declined, dangling, unplaced = _moved_pointers(root, mp, text) \
         if ok_git else ([], [], [], [])
-    left = dict(((mv.ptr.line, mv.ptr.start), mv) for mv in declined)
+    left = dict(((mv.ptr.line, mv.ptr.start), mv) for mv in declined if mv.now)
     diffs, known = {}, {}
 
     def diff(*key):
@@ -2391,20 +2598,31 @@ def cmd_check(root, mp):
     # a pointer is a claim about where the code is, whatever its proof.
     if moved or declined:
         rows = [((mv.ptr.line, mv.ptr.start), "    %s: %s (written @ %s%s) -> %s"
-                 % (mv.ptr.fid, _ptr_text(mv.ptr), mv.base[:7], mv.via,
-                    _ptr_text(mv.ptr, mv.now))) for mv in moved]
+                 % (mv.ptr.fid, _ptr_text(mv.ptr), mv.base[:7],
+                    "" if mv.rewritten else mv.via, _ptr_text(mv.ptr, mv.now))
+                 + (" REWRITTEN: %s; %s - run --reaim" % (mv.via, mv.reason)
+                    if mv.rewritten else "")) for mv in moved]
+        rows += [((mv.ptr.line, mv.ptr.start), "    %s: %s (written @ %s) %s"
+                  % (mv.ptr.fid, _ptr_text(mv.ptr), mv.base[:7], mv.reason))
+                 for mv in declined if mv.rewritten]
         rows += [((mv.ptr.line, mv.ptr.start), "    %s: %s (written @ %s) -> %s NOT "
                   "re-aimed: %s - re-drive it, then --reaim, or set it by hand"
                   % (mv.ptr.fid, _ptr_text(mv.ptr), mv.base[:7],
-                     _ptr_text(mv.ptr, mv.now), mv.reason)) for mv in declined]
+                     _ptr_text(mv.ptr, mv.now), mv.reason))
+                 for mv in declined if not mv.rewritten]
+        rewritten = any(mv.rewritten for mv in moved + declined)
         problems.append(
             "%d hand-mapped code range(s) name lines that have moved - code was "
             "added or removed above them after the pointer was written, so those "
             "numbers now hold other code. The code in a range --reaim can move "
             "did not change after its proof, so no proof is staled by that: run "
             "--reaim, or set each by hand. One marked NOT re-aimed has a change "
-            "inside it that no proof covers, so --reaim leaves it:\n"
-            % (len(moved) + len(declined))
+            "inside it that no proof covers, so --reaim leaves it%s:\n"
+            % (len(moved) + len(declined),
+               ". One marked REWRITTEN had its own line rewritten: --reaim moves it "
+               "to where the code derives its capability now, and the move carries "
+               "no proof. One marked rewritten: re-aim by hand is found by nothing, "
+               "and fails this check until it is set by hand" if rewritten else "")
             + "\n".join(row for _, row in sorted(rows)))
     _say_dangling(dangling)
     # A pointer neither committed nor stamped is read in today's lines: right
@@ -2439,7 +2657,7 @@ def cmd_check(root, mp):
         print("NOTE git unavailable or not a repository here - staleness of proof "
               "could NOT be measured, so a clean result below does not cover it")
 
-    # The ratchet. An agent copies its nearest neighbour, so an anti-pattern
+    # The ratchet. An agent copies its nearest neighbor, so an anti-pattern
     # spreads by being present. Grandfather what exists, refuse what is added.
     src_files = [p for p in walk(root)
                  if not generated_reason(root, p, set())]
@@ -3240,6 +3458,13 @@ def cmd_live(root, mp, args):
 JUDGE_LOW, JUDGE_HIGH = 0.30, 0.70       # unvalidated: reference/jev-calibration.md
 
 
+# The client is an optional dependency: installed alone, this skill runs, and
+# the two places that need Jev say by name what is missing (1.4.9).
+NO_CLIENT = ("NOT JUDGED the optional levjev skill (the Jev client) is not installed "
+             "beside this one (no %s)")
+RUNS_WITHOUT = "everything but --judge and the reading at --record runs without it"
+
+
 def _jev_client():
     """(module, path) of the levjev skill's client, installed beside this skill -
     its own skill since 2026-09-24 and LevJev since 2026-09-29, the one home for
@@ -3287,7 +3512,7 @@ def _judge_record(root, feature, observable):
         return {"not_judged": "no intent"}
     jev, where = _jev_client()
     if jev is None:
-        print("  NOT JUDGED the levjev skill is not installed beside this one")
+        print("  " + NO_CLIENT % where + " - the proof is recorded; " + RUNS_WITHOUT)
         return {"not_judged": "no levjev skill"}
     q = _intent_question(entry["intent"], observable)
     problems = jev.lint({feature: q})
@@ -3320,8 +3545,7 @@ def cmd_judge(root, mp, feature):
         return 1
     jev, where = _jev_client()
     if jev is None:
-        print("NOT JUDGED the levjev skill is not installed beside this one (no %s) "
-              "- nothing was asked" % where)
+        print(NO_CLIENT % where + " - nothing was asked; " + RUNS_WITHOUT)
         return 2
     authored = parse_map(read(mp))[1]
     pool = [(fid, f) for fid, f in sorted(authored.items())

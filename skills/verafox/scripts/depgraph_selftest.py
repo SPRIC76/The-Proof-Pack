@@ -20,7 +20,7 @@ Cases 15-20 each come from a real run that was wrong (a production failure is a
 free test case): six files of a web app and of KiT saved with a byte-order mark
 were reported "python that does not parse" and lost every edge; 26 local modules
 imported through sys.path were counted as third-party; 67 image, video and
-licence links were reported unresolved; the tour never reached the web app's
+license links were reported unresolved; the tour never reached the web app's
 app.py because tests import it. Case 21: 65 of the web app's files and 16 of
 KiT's that read another through a path joined from parts were missing from
 `affected`, and a changed test was not run.
@@ -175,7 +175,7 @@ def fixture_real(root):
     put(root, "LICENSE", "MIT\n")
     put(root, "docs/page.md",
         "# Page\n\n```\n[not a link](nowhere.md)\n```\n\n"
-        "[logo](../img/logo.png) and [licence](../LICENSE) and [lib](../lib/)\n"
+        "[logo](../img/logo.png) and [license](../LICENSE) and [lib](../lib/)\n"
         "[^1]: See the notes\n[gone](missing.md)\n")
     put(root, "site/index.html",
         "<!doctype html><html><head>\n<link rel=\"icon\" href=\"../img/logo.png\">\n"
@@ -562,7 +562,7 @@ def main():
               bool(nsu) and "ns" not in nsu[0].get("externals", ["ns"])
               and "ns" not in gx.get("externals", {})
               and hasx("nsuser.py", "ns/two.py", "import"), repr(nsu) + xkeys)
-        check("an image, a licence and a folder link are not unresolved",
+        check("an image, a license and a folder link are not unresolved",
               not any(("logo.png" in u["spec"] or "LICENSE" in u["spec"]
                        or u["spec"].rstrip("/").endswith("lib")) for u in ux)
               and hasx("docs/page.md", "LICENSE", "link")

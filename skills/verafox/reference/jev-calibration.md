@@ -48,9 +48,9 @@ of 0.5 means torn, not "medium confidence".
    73 of 316 readings by up to 0.08 (a static site, 2026-09-29). Ask an entry within
    0.08 of a candidate threshold at least three times, and set the thresholds on
    the spread, not on one number.
-4. Set `JUDGE_LOW` so that no entry labelled "shows it" falls below it, and
-   `JUDGE_HIGH` so that no entry labelled "does not" rises above it. Readings
-   between the two are torn by definition. When the labels overlap, favour the
+4. Set `JUDGE_LOW` so that no entry labeled "shows it" falls below it, and
+   `JUDGE_HIGH` so that no entry labeled "does not" rises above it. Readings
+   between the two are torn by definition. When the labels overlap, favor the
    costlier mistake: calling a hollow observable fine lets a hollow verification
    stand.
 5. Record the table, the date, the pin and the counts here. Then change the two
@@ -71,10 +71,10 @@ of 0.5 means torn, not "medium confidence".
 
 ## First real readings — withheld from whoever labels
 
-Do not show these to the labeller before the labels are written; a label made
+Do not show these to the labeler before the labels are written; a label made
 after seeing Jev's number calibrates Jev against itself. They are a first look at
 the pipeline, not calibration data: step 3 above re-runs `--judge` on the text as it
-stands when labelling happens.
+stands when labeling happens.
 
 2026-09-23 20:02 ET, jev-1.13.0, one request per map. Verafox's own map: 10 entries,
 1167 ms, 1785 input tokens. A web app: 9 entries, 1037 ms, 1602 input

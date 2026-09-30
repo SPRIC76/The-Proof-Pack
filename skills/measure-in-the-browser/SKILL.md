@@ -2,7 +2,7 @@
 name: measure-in-the-browser
 description: Discipline for verifying visual work (layout, color, contrast, typography, hover placement, theme toggles, and a page's first load frame by frame) by measuring the rendered page instead of reading the stylesheet or judging a screenshot by eye. Use whenever a UI change is about to be reported as done, whenever a screenshot looks wrong or blank, whenever a flex or grid rule seems ignored, whenever a contrast or accessibility floor is claimed, before a third attempt at any color solve, and to play-test any change to what a page's load paints (a flash, a stand-in, a font swap, an empty slot on a first visit). Derived 2026-09-15 from seventy review rounds on a web app; every rule below cost at least one pass.
 metadata:
-  version: 1.2.0
+  version: 1.2.1
   source: derived from the review records of a web app and KiT (2026-09)
   owner: SPRIC76
 ---
@@ -18,13 +18,13 @@ thing the reader sees, with JavaScript, and report the number.
 
 Three passes were once spent on shapes that sat entirely behind a desk. Before
 polishing a shape, measure how much of it is on screen (bounding rect against the
-occluder's rect, or `elementFromPoint` at its centre). If most of it is hidden,
+occluder's rect, or `elementFromPoint` at its center). If most of it is hidden,
 the round is about the occluder.
 
 ## How to take a reading
 
-- **Use `getBoundingClientRect` and `getComputedStyle`, not pixels.** In the Claude
-  desktop Browser pane a screenshot taken after scrolling comes back black or as a
+- **Use `getBoundingClientRect` and `getComputedStyle`, not pixels.** In some agents' built-in browser panes a screenshot taken after scrolling
+  comes back black or as a
   stale frame; zoom-to-region is unsupported. For a picture of something lower on
   the page, hide the elements above it (`style.display='none'`), shoot at scroll 0,
   then reload. A load under test is the exception: its frames are the evidence
@@ -83,7 +83,7 @@ passed). Play-test every iteration that touches what a load paints.
   scale passed it; production must fail in every condition the check claims.
 - **Compare a substitute with the real render by number.** A poster or fallback
   image is measured against the scene's own render at the same size (mean
-  grey-level difference, with the bar stated), not approved by eye.
+  gray-level difference, with the bar stated), not approved by eye.
 - **Look at the frames yourself.** Here the pixels are the evidence, read by
   number and by eye; the DOM says what was meant to paint. Keep a filmstrip (a
   cell every 100-200 ms, its times listed) and the first, failing and last
@@ -105,8 +105,8 @@ painted, and pass or fail for the change and for production.
   `n/255` before checking any floor that depends on one.
 - **A contrast floor is a ceiling on lightness only.** Solving several stops one at
   a time against one floor lands them at the same lightness with only hue left to
-  tell them apart. Solve them as one problem: maximise the smallest OKLab gap
-  between neighbours subject to every stop clearing the floor, then check the
+  tell them apart. Solve them as one problem: maximize the smallest OKLab gap
+  between neighbors subject to every stop clearing the floor, then check the
   lightness spread, not just the hue spread.
 - **When ink cannot clear, make it ground.** A color light enough to look vivid is
   too light to be a letter on paper; that is arithmetic, and a fourth solve will not

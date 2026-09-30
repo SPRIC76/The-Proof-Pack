@@ -63,8 +63,8 @@ first `--check`; left as it is, `--live` refuses its placeholder address.
 
 ## How this codebase does things
 
-An agent writes what its neighbours wrote — that is the cheapest correct behaviour
-available to something with no context, and it is what makes a bad neighbour
+An agent writes what its neighbors wrote — that is the cheapest correct behavior
+available to something with no context, and it is what makes a bad neighbor
 contagious. Each rule below names the wrong way so it can be counted, and the right
 way by `path:line` so copying it is the shortest action available.
 

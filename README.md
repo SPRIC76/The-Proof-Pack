@@ -6,10 +6,10 @@ scripts, so any agent host that reads skill folders can load them; the install s
 
 | Skill | Core question | Carries |
 |-------|---------------|---------|
-| **Verafox** | Did I drive it the way a user does, and read the result back? | A feature map of every capability, from the user's side and the developer's; four evidence grades (DRIVEN, TESTED, ASSERTED, UNKNOWN); a proof store; branch, commit and production comparison (`featuremap.py`, 255-case self-test); a dependency graph that names what a change can break and which tests to run (`depgraph.py`, 119-case self-test); Mutate, a read-only inventory of other people's skills, plugins and tools with their red flags, an overlap check against your own, and a ledger of what was absorbed (`mutate.py`, 137-case self-test) |
-| **Testcatch** | Would this test go red if the thing it guards broke? | Re-injection probes: put the defect back on purpose and watch the check fail; the mutation check before a test file is finished; `floor_guard.py`, which lists every place a change lowered the test floor (a new skip, a lost assertion, a loosened threshold, a CI step gone) with a ratchet ledger, 96-case self-test |
-| **measure-in-the-browser** | Did I measure the rendered page, or guess from the stylesheet? | Layout, colour, contrast and typography read from the live page, and a page's first load played frame by frame |
-| **LevJev** | Is this a narrow judgment a typed model can make, and where in this codebase does the answer live? | `jev.py`, a pinned client for TypeSafe's Jev model, with its rules enforced in code and a 19-case self-test; `search.py`, repository search built on it, with a 31-case self-test |
+| **Verafox** | Did I drive it the way a user does, and read the result back? | A feature map of every capability, from the user's side and the developer's; four evidence grades (DRIVEN, TESTED, ASSERTED, UNKNOWN); a proof store; branch, commit and production comparison (`featuremap.py`, 275-case self-test); a dependency graph that names what a change can break and which tests to run (`depgraph.py`, 119-case self-test); Mutate, a read-only inventory of other people's skills, plugins and tools with their red flags, an overlap check against your own, and a ledger of what was absorbed (`mutate.py`, 137-case self-test) |
+| **Testcatch** | Would this test go red if the thing it guards broke? | Re-injection probes: put the defect back on purpose and watch the check fail; the mutation check before a test file is finished; `floor_guard.py`, which lists every place a change lowered the test floor (a new skip, a lost assertion, a loosened threshold, a CI step gone) with a ratchet ledger, 99-case self-test |
+| **measure-in-the-browser** | Did I measure the rendered page, or guess from the stylesheet? | Layout, color, contrast and typography read from the live page, and a page's first load played frame by frame |
+| **LevJev** | Is this a narrow judgment a typed model can make, and where in this codebase does the answer live? | `jev.py`, a pinned client for TypeSafe's Jev model, with its rules enforced in code and a 22-case self-test; `search.py`, repository search built on it, with a 31-case self-test |
 
 Each skill works alone. Together, Verafox names what to check, measure-in-the-browser and Testcatch keep that check
 honest, and LevJev adds a typed second reading where a judgment is narrow enough to ask.
@@ -70,11 +70,11 @@ every self-test on the copy, writes `LICENSE`, checks that the self-test counts 
 and has Jev read every sentence of prose.
 
 Run Mutate over this pack (`mutate.py inventory skills`) and it reads RED, exit 1, by design: the flags are what
-these tools do - LevJev's client sends an HTTPS request with a key it reads from the environment or
-`~/.agents/.env`, and Verafox's `--live` sends GET requests to production - plus this README's install paths,
-Mutate's own detector patterns and search.py's read-only `.gitignore` handling, which it cannot tell from the
-things they detect. Only the
-self-tests' fixtures are counted apart, by their own `mutate: fixture` line; read every flag it prints.
+these tools do - LevJev's client sends an HTTPS request with a key it reads from the environment or from a key
+file in the user's home folder, and Verafox's `--live` sends GET requests to production - plus this README's
+install paths, Mutate's own detector patterns and search.py's read-only ignore-file handling, which it cannot
+tell from the things they detect. Defensive mentions and the self-tests' fixtures are counted apart, the
+fixtures by their own `mutate: fixture` line; read every flag it prints.
 
 ## License
 

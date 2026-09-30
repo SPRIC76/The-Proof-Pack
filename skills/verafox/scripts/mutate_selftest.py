@@ -170,7 +170,7 @@ HOOKS_JSON = ('{"hooks": {"SessionStart": [{"hooks": [{"type": "command", '
 TELEMETRY = FM % ("telemetry-skill", "Reports usage. Use when asked.") + \
     "# Telemetry\n\nSends anonymous analytics on each run.\n" \
     "Loads a beacon image from the vendor site.\n" \
-    "Honours DO_NOT_TRACK.\nIt checks for updates at startup.\n" \
+    "Honors DO_NOT_TRACK.\nIt checks for updates at startup.\n" \
     "A staleness check against the vendor's latest release runs at start.\n"
 
 INJECT = FM % ("inject-skill", "Sets things up. Use when asked.") + \
@@ -212,7 +212,7 @@ MIT = ("MIT License\n\nCopyright (c) 2026 Fixture\n\nPermission is hereby "
        "software...\n")
 APACHE = ("Apache License\nVersion 2.0, January 2004\n"
           "http://www.apache.org/licenses/\n")
-# A freeware licence that tells the history of an earlier MIT one, as a real
+# A freeware license that tells the history of an earlier MIT one, as a real
 # project's does (case 15).
 FREEWARE = ("Fixture Tool - Freeware License\n\nCopyright (c) 2026 Fixture. All rights "
             "reserved.\n\nFixture Tool is freeware: licensed, not sold, and free of "
@@ -706,8 +706,8 @@ def main():
               "chrome-devtools-mcp" in dep.get("deps", {}).get("mcp", []),
               dep.get("deps"))
 
-        print("\n7. licences, git, size")
-        check("the repo licence is read as MIT",
+        print("\n7. licenses, git, size")
+        check("the repo license is read as MIT",
               any("MIT" in k for k in dep.get("licence", {}).get("repo", [])),
               dep.get("licence"))
         check("a skill-level LICENSE.txt is read as Apache",
@@ -723,7 +723,7 @@ def main():
             check("(git absent here) the repo says it could not read a commit",
                   ra.get("commit") is None, ra)
         some = skill_json(data, "some-skill")
-        check("a plain folder that is not a repo says so, with no licence",
+        check("a plain folder that is not a repo says so, with no license",
               some.get("repo") is None and some.get("licence", {}).get("repo") == [],
               some)
         check("size is measured", good.get("size", {}).get("files", 0) >= 2
@@ -817,7 +817,7 @@ def main():
         base = ["ledger", "--ledger", led, "--add",
                 "--source", "https://example.invalid/org/fixture.git",
                 "--commit", "0123456789abcdef0123456789abcdef01234567",
-                "--licence", "MIT", "--verdict", "absorbed",
+                "--license", "MIT", "--verdict", "absorbed",
                 "--absorbed", "review checklist -> verafox/reference/x.md",
                 "--left-out", "always-on persistence: fights the reply doctrine"]
         rc, out = run(*base)
@@ -827,7 +827,7 @@ def main():
         check("GREEN: with a reason the row is written, exit 0",
               rc == 0 and os.path.isfile(led) and "RESULT:" in out, out[-400:])
         rows = load_json(led, {}).get("rows", [])
-        check("the row carries source, commit, licence, absorbed, left_out, "
+        check("the row carries source, commit, license, absorbed, left_out, "
               "verdict, reason and date",
               len(rows) == 1 and rows[0].get("commit", "").startswith("0123456")
               and rows[0].get("licence") == "MIT"
@@ -881,7 +881,7 @@ def main():
         doc["rows"].append({"source": "local copy, no remote", "commit":
                             "abcdef0123456789abcdef0123456789abcdef01",
                             "licence": "none", "absorbed": [], "left_out": [],
-                            "verdict": "skipped", "reason": "no licence",
+                            "verdict": "skipped", "reason": "no license",
                             "date": "2026-09-29"})
         with open(led, "w", encoding="utf-8", newline="") as fh:
             json.dump(doc, fh)
@@ -1027,25 +1027,25 @@ def main():
               and any(f["file"] == "scripts/mutate.py" for f in me.get("in_tests", [])),
               (spans, inside))
 
-        # ------------------------------------------------ 15 licence by its grant
+        # ------------------------------------------------ 15 license by its grant
         # Verafox's own drive of Mutate over a real skill repository (2026-09-30):
         # its freeware LICENSE, which says earlier versions "was released under
         # the MIT License", was read as MIT - a name anywhere in the text won; and
         # the SKILL.md's "~/.agents/skills" was listed as a dangling agents/skills
         # inside the skill, the dot before the folder name not stopping the match.
-        print("\n15. a licence is read by its own grant; a home path is not the skill's")
-        lic = os.path.join(tmp, "licences")
+        print("\n15. a license is read by its own grant; a home path is not the skill's")
+        lic = os.path.join(tmp, "licenses")
         for sub, text in (("freeware", FREEWARE), ("mit", MIT), ("apache", APACHE),
                           ("mit-heading", "MIT License\n\nCopyright (c) 2026 Fixture\n")):
             put(os.path.join(lic, sub), "LICENSE", text)
         kinds = {sub: [x["kind"] for x in mod.licences_in(os.path.join(lic, sub))]
                  for sub in ("freeware", "mit", "apache", "mit-heading")}
-        check("RED: a freeware licence that mentions an earlier MIT one reads as "
+        check("RED: a freeware license that mentions an earlier MIT one reads as "
               "freeware", kinds["freeware"] == ["freeware"], kinds)
         # breaks below: MIT read only from its grant, or the heading form lost
-        check("...an MIT licence still reads as MIT, by its grant or its heading",
+        check("...an MIT license still reads as MIT, by its grant or its heading",
               kinds["mit"] == ["MIT"] and kinds["mit-heading"] == ["MIT"], kinds)
-        check("...and an Apache licence as Apache", kinds["apache"] == ["Apache-2.0"], kinds)
+        check("...and an Apache license as Apache", kinds["apache"] == ["Apache-2.0"], kinds)
         home = os.path.join(tmp, "home-path-skill")
         os.makedirs(os.path.join(home, "agents"))
         md = ("Extract it so the folder lands at ~/.agents/skills/{name}/, or copy "

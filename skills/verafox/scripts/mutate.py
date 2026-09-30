@@ -12,7 +12,7 @@ WHAT IT DOES
                          report per skill: folder versus frontmatter name, the
                          description's length, style and unquoted ": ", every
                          file it references and any reference OUTSIDE its own
-                         folder, licence files per repo and per skill, the git
+                         folder, license files per repo and per skill, the git
                          SHA and remote, red flags with file:line and a
                          category, defensive mentions counted apart, the
                          binaries, CLIs, env vars and MCP servers it names and
@@ -22,7 +22,7 @@ WHAT IT DOES
                          description tokens and trigger words, so a human or
                          an agent decides keep, absorb or skip per row.
     ledger               read or write the Mutate ledger: what was absorbed
-                         from where, at which commit, under which licence, what
+                         from where, at which commit, under which license, what
                          was left out and why, the verdict and the date. A row
                          without a reason is refused; a hand-edited row without
                          one fails the listing.
@@ -67,7 +67,7 @@ USAGE
     python mutate.py inventory ~/clones/ten [--json] [--out inv.json] [--skill NAME]
     python mutate.py collate inv.json --home ~/.agents/skills
     python mutate.py ledger --ledger C:\\path\\mutate-ledger.json [--json]
-    python mutate.py ledger --ledger ... --add --source URL --commit SHA --licence MIT \\
+    python mutate.py ledger --ledger ... --add --source URL --commit SHA --license MIT \\
         --absorbed "what -> where" --left-out "what: why" --verdict absorbed --reason "why"
     python mutate.py evolve --ledger ... [--online]
 """
@@ -121,7 +121,7 @@ _WRITE_VERB = re.compile(
     r"copy|copies|junction|symlink)\b|>>?\s*[~./%$]", re.I)
 # A defensive cue in an injection match's own sentence makes it a mention (the
 # addyosmani lines that say page text is data). Inherited as a search of the
-# whole line with one trailing \b, which made e.g., defence, sanitize and
+# whole line with one trailing \b, which made e.g., defense, sanitize and
 # guards unmatchable and let "report" anywhere on a line excuse an injection
 # in another sentence; each cue now ends where its word does.
 _DEFENSIVE = re.compile(
@@ -412,7 +412,7 @@ PRAGMA_NOTE = " - under the file's mutate: fixture pragma"
 def fixture_spans(lines):
     """[(first, last)] line ranges, 1-based and inclusive, that a code file
     sets apart with the pragma. A begin without an end runs to the end of the
-    file; a bare pragma past the tenth line is not honoured."""
+    file; a bare pragma past the tenth line is not honored."""
     spans, start = [], None
     for i, ln in enumerate(lines, 1):
         m = _PRAGMA.match(ln)
@@ -547,8 +547,8 @@ def repo_top(d):
 
 
 _LICENCE_NAME = re.compile(r"^(licen[cs]e|copying|unlicense)(\.[\w-]+|[-_.].*)?$", re.I)
-# A licence is read by its own grant or heading, not by a name anywhere in it: a
-# freeware licence that tells how earlier versions were "released under the MIT
+# A license is read by its own grant or heading, not by a name anywhere in it: a
+# freeware license that tells how earlier versions were "released under the MIT
 # License" is freeware (Verafox's own drive over a real repository, 2026-09-30).
 _LICENCE_KINDS = (
     ("MIT", re.compile(r"Permission is hereby granted, free of charge|\A\s*(?:The )?MIT Licen[cs]e\b")),
@@ -567,7 +567,7 @@ _LICENCE_KINDS = (
 
 
 def licences_in(d):
-    """[{file, kind}] for licence files directly inside d."""
+    """[{file, kind}] for license files directly inside d."""
     out = []
     try:
         names = sorted(os.listdir(d))
@@ -576,7 +576,7 @@ def licences_in(d):
     for n in names:
         if _LICENCE_NAME.match(n) and os.path.isfile(os.path.join(d, n)):
             text, _ = read_text(os.path.join(d, n))
-            kind = "unrecognised"
+            kind = "unrecognized"
             for k, rx in _LICENCE_KINDS:
                 if text and rx.search(text[:6000]):
                     kind = k
@@ -1022,7 +1022,7 @@ def _hits(r, f):
 
 
 def _apart(r, f):
-    """The hits a file set apart itself, each labelled with the claim."""
+    """The hits a file set apart itself, each labeled with the claim."""
     hits = _hits(r, f)
     for h in hits:
         h["label"] += PRAGMA_NOTE
@@ -1386,7 +1386,7 @@ def render_inventory(doc):
          "", "_read-only; %d skill(s) in %d repo(s); generated %s_"
          % (doc["totals"]["skills"], doc["totals"]["repos"], doc["generated"]), ""]
     if doc["repos"]:
-        o += ["## Repositories", "", "| repo | commit | remote | licence | skills |",
+        o += ["## Repositories", "", "| repo | commit | remote | license | skills |",
               "|---|---|---|---|---|"]
         for r in doc["repos"]:
             o.append("| %s | %s | %s | %s | %d |" % (
@@ -1409,7 +1409,7 @@ def render_inventory(doc):
             o.append("- other frontmatter keys: " + ", ".join(s["frontmatter_keys"]))
         o.append("- size: %d file(s), %d bytes; SKILL.md %d lines" % (
             s["size"]["files"], s["size"]["bytes"], s["size"]["skill_md_lines"]))
-        o.append("- licence: skill %s; repo %s" % (
+        o.append("- license: skill %s; repo %s" % (
             ", ".join(s["licence"]["skill"]) or "none",
             ", ".join(s["licence"]["repo"]) or ("none" if s["repo"] else "not a repo")))
         if s["copies"]:
@@ -1660,8 +1660,8 @@ def cmd_ledger(a):
             problems.append("--source is required (repo URL or a plain name)")
         if not re.fullmatch(r"[0-9a-fA-F]{7,40}", a.commit or ""):
             problems.append("--commit must be a hex SHA of 7 to 40 characters")
-        if not (a.licence or "").strip():
-            problems.append("--licence is required - say 'none' when there is none")
+        if not (a.license or "").strip():
+            problems.append("--license is required - say 'none' when there is none")
         if a.verdict not in VERDICTS:
             problems.append("--verdict must be one of %s" % " | ".join(VERDICTS))
         if not (a.reason or "").strip():
@@ -1678,7 +1678,7 @@ def cmd_ledger(a):
                        % (len(problems), path))
             return 2
         row = {"source": a.source.strip(), "commit": a.commit.lower(),
-               "licence": a.licence.strip(), "absorbed": absorbed, "left_out": left_out,
+               "licence": a.license.strip(), "absorbed": absorbed, "left_out": left_out,
                "verdict": a.verdict, "reason": a.reason.strip(),
                "date": a.date or datetime.date.today().isoformat()}
         doc["rows"].append(row)
@@ -1698,7 +1698,7 @@ def cmd_ledger(a):
                          indent=1, ensure_ascii=False))
     else:
         o = ["# Mutate ledger - %s" % path, "", "| # | date | verdict | source @ commit | "
-             "licence | absorbed | left out | reason |", "|---|---|---|---|---|---|---|---|"]
+             "license | absorbed | left out | reason |", "|---|---|---|---|---|---|---|---|"]
         for i, r in enumerate(rows, 1):
             o.append("| %d | %s | %s | %s @ %s | %s | %s | %s | %s |" % (
                 i, r.get("date", ""), r.get("verdict", ""), r.get("source", ""),
@@ -1836,7 +1836,7 @@ def main(argv=None):
     l.add_argument("--add", action="store_true")
     l.add_argument("--source")
     l.add_argument("--commit")
-    l.add_argument("--licence", "--license", dest="licence")
+    l.add_argument("--license", "--licence", dest="license")
     l.add_argument("--absorbed", action="append", help='"what -> where" (repeatable)')
     l.add_argument("--left-out", action="append", help='"what: why" (repeatable)')
     l.add_argument("--verdict", help=" | ".join(VERDICTS))

@@ -6,7 +6,7 @@ questions only a graph answers in one step.
 WHAT IT READS (locally, no model, no network)
     Python      `ast`: imports (relative, namespace-package and src/ layouts
                 resolved; a name only sys.path can find is matched to the one
-                local file of that name and labelled so), calls through an
+                local file of that name and labeled so), calls through an
                 imported name, class bases, and file names in string literals
                 or joined from parts (os.path.join, Path / "x", joinpath).
     JS / TS     import, export-from, require() and import(), by a tokenizer
@@ -393,7 +393,7 @@ class Graph:
             yield key[0], key[1], key[2], e
 
     def adjacency(self, inferred=False, reverse=False, kinds=None):
-        """{node: {neighbour: [(kind, symbols, line, inferred, by_name)]}} - sorted."""
+        """{node: {neighbor: [(kind, symbols, line, inferred, by_name)]}} - sorted."""
         adj = {n: {} for n in self.nodes}
         for a, b, kind, e in self.edge_list(inferred, kinds):
             if reverse:
@@ -587,7 +587,7 @@ def _is_main_guard(st):
 
 def parse_python(g, r, raw, text, trees):
     try:
-        tree = ast.parse(raw)       # bytes: the parser honours a BOM and a coding line
+        tree = ast.parse(raw)       # bytes: the parser honors a BOM and a coding line
     except (SyntaxError, ValueError):
         try:
             tree = ast.parse(text)
@@ -1658,12 +1658,12 @@ text{font-size:11px;fill:var(--fg);pointer-events:none;paint-order:stroke;stroke
 <div class="legend" id="legend"></div>
 <main>
 <svg id="view" role="img" aria-label="dependency graph"><g id="edges"></g><g id="nodes"></g><g id="labels"></g></svg>
-<aside id="side"><h2>Click a file</h2><p style="color:var(--muted)">Size is in-degree (how many files depend on it). Colour is the cluster; grey is a smaller cluster or a file with no edges. Blue lines lead to what it imports, orange lines come from what imports it.</p></aside>
+<aside id="side"><h2>Click a file</h2><p style="color:var(--muted)">Size is in-degree (how many files depend on it). Color is the cluster; gray is a smaller cluster or a file with no edges. Blue lines lead to what it imports, orange lines come from what imports it.</p></aside>
 </main>
 <script>
 var D = __DATA__;
-var PAL = ["#4c78a8","#f58518","#54a24b","#e45756","#b279a2","#ff9da6","#9d755d","#72b7b2","#eeca3b","#bab0ac"], GREY = "#8a8f98";
-function colour(c){ return c >= 0 && c < PAL.length ? PAL[c] : GREY; }
+var PAL = ["#4c78a8","#f58518","#54a24b","#e45756","#b279a2","#ff9da6","#9d755d","#72b7b2","#eeca3b","#bab0ac"], GRAY = "#8a8f98";
+function color(c){ return c >= 0 && c < PAL.length ? PAL[c] : GRAY; }
 var N = D.nodes, E = D.edges, n = N.length;
 var svg = document.getElementById("view"), NS = svg.namespaceURI, gE = document.getElementById("edges"), gN = document.getElementById("nodes"), gL = document.getElementById("labels");
 var W = 1000, H = 700;
@@ -1671,8 +1671,8 @@ document.getElementById("meta").textContent = D.root + " - " + n + " files, " + 
 var leg = document.getElementById("legend");
 function legendItem(col, text){ var s = document.createElement("span"); var dot = document.createElement("i"); dot.style.background = col; s.appendChild(dot); s.appendChild(document.createTextNode(text)); leg.appendChild(s); }
 D.clusters.slice(0, PAL.length).forEach(function(c, i){ legendItem(PAL[i], c.hub + " (" + c.size + ")"); });
-if (D.clusters.length > PAL.length) legendItem(GREY, (D.clusters.length - PAL.length) + " smaller clusters");
-if (D.lonely) legendItem(GREY, D.lonely + " unconnected");
+if (D.clusters.length > PAL.length) legendItem(GRAY, (D.clusters.length - PAL.length) + " smaller clusters");
+if (D.lonely) legendItem(GRAY, D.lonely + " unconnected");
 var adjOut = [], adjIn = [];
 for (var i = 0; i < n; i++) { adjOut.push([]); adjIn.push([]); }
 E.forEach(function(e){ adjOut[e[0]].push(e); adjIn[e[1]].push(e); });
@@ -1683,7 +1683,7 @@ var keys = Object.keys(byC);
 keys.forEach(function(k, ci){ var arr = byC[k]; var a0 = ci / keys.length * Math.PI * 2; var R = Math.min(W, H) * 0.32; var cx = W/2 + Math.cos(a0) * R * (keys.length > 1 ? 1 : 0), cy = H/2 + Math.sin(a0) * R * (keys.length > 1 ? 1 : 0); arr.forEach(function(i, j){ var a = j / arr.length * Math.PI * 2; var r = 20 + Math.sqrt(arr.length) * 12; N[i].x = cx + Math.cos(a) * r; N[i].y = cy + Math.sin(a) * r; N[i].vx = 0; N[i].vy = 0; }); });
 function radius(d){ return 4 + Math.sqrt(d.i) * 2.2; }
 var els = [], lbl = [], lines = [];
-N.forEach(function(d, i){ var c = document.createElementNS(NS, "circle"); c.setAttribute("r", radius(d)); c.setAttribute("fill", colour(d.c)); c.addEventListener("click", function(ev){ ev.stopPropagation(); select(i); }); var t = document.createElementNS(NS, "title"); t.textContent = d.id; c.appendChild(t); gN.appendChild(c); els.push(c); var l = document.createElementNS(NS, "text"); l.textContent = d.id.split("/").pop(); l.style.display = d.i >= D.labelAt ? "" : "none"; gL.appendChild(l); lbl.push(l); });
+N.forEach(function(d, i){ var c = document.createElementNS(NS, "circle"); c.setAttribute("r", radius(d)); c.setAttribute("fill", color(d.c)); c.addEventListener("click", function(ev){ ev.stopPropagation(); select(i); }); var t = document.createElementNS(NS, "title"); t.textContent = d.id; c.appendChild(t); gN.appendChild(c); els.push(c); var l = document.createElementNS(NS, "text"); l.textContent = d.id.split("/").pop(); l.style.display = d.i >= D.labelAt ? "" : "none"; gL.appendChild(l); lbl.push(l); });
 E.forEach(function(e){ var l = document.createElementNS(NS, "line"); gE.appendChild(l); lines.push(l); });
 // The layout is computed before the first paint, not animated: requestAnimationFrame
 // never runs in a hidden tab or a preview, where the graph stayed at its start.
@@ -1692,7 +1692,7 @@ function layout(){ var t0 = Date.now(); while (ticks < maxTicks && Date.now() - 
 function step(){
   var k = 0.02, rep = n > 400 ? 900 : 1600, grid = {};
   for (var i = 0; i < n; i++) { var a = N[i]; a.vx += (W/2 - a.x) * 0.002; a.vy += (H/2 - a.y) * 0.002; var key = Math.floor(a.x / CELL) + "," + Math.floor(a.y / CELL); (grid[key] = grid[key] || []).push(i); }
-  // repulsion only between nodes in neighbouring cells: a pair further apart than CELL is skipped anyway, and a big repo stays smooth
+  // repulsion only between nodes in neighboring cells: a pair further apart than CELL is skipped anyway, and a big repo stays smooth
   for (var i = 0; i < n; i++) { var a = N[i], gx = Math.floor(a.x / CELL), gy = Math.floor(a.y / CELL);
     for (var x = gx - 1; x <= gx + 1; x++) for (var y = gy - 1; y <= gy + 1; y++) { var cell = grid[x + "," + y]; if (!cell) continue;
       for (var t = 0; t < cell.length; t++) { var j = cell[t]; if (j <= i) continue; var b = N[j]; var dx = a.x - b.x, dy = a.y - b.y; var d2 = Math.max(dx*dx + dy*dy, 100); if (d2 > CELL * CELL) continue; var d = Math.sqrt(d2), f = rep / d2; var fx = dx / d * f, fy = dy / d * f; a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy; } } }

@@ -1,11 +1,11 @@
 ---
 name: verafox
-description: Verafox (formerly verify-before-done) - verify your own work empirically before reporting it, using a project's feature map (every capability from the user's and the developer's face, how it is reached and operated, what it must and must not do, its evidence grade) for the working tree, any commit, and what production serves. Use before saying done, fixed, working, ready or complete, or passing on a helper's success report; when the user says Verafox or Mutate; when asked what a project can do, how a user reaches it, or what an operator configures; when comparing branches, commits or production; when asked what depends on what or what a change breaks; when onboarding to an unfamiliar codebase; when a change touches a user-facing path; when unsure which convention to follow; when the feature map is stale or missing; and when asked to vet, absorb or rebuild someone else's skill, plugin or tool. Not for how code works (levjev). Carries featuremap.py (Jev via levjev), depgraph.py and mutate.py.
+description: Verafox (formerly verify-before-done) - verify your own work empirically before reporting it, using a project's feature map (every capability from the user's and the developer's face, how it is reached and operated, what it must and must not do, its evidence grade) for the working tree, any commit, and what production serves. Use before saying done, fixed, working, ready or complete, or passing on a helper's success report; when the user says Verafox or Mutate; when asked what a project can do, how a user reaches it, or what an operator configures; when comparing branches, commits or production; when asked what depends on what or what a change breaks; when onboarding to an unfamiliar codebase; when a change touches a user-facing path; when unsure which convention to follow; when the feature map is stale or missing; and when asked to vet, absorb or rebuild someone else's skill, plugin or tool. Not for how code works (a code-search tool). Carries featuremap.py (optional Jev client), depgraph.py and mutate.py.
 metadata:
-  version: 1.4.7
-  depends_on: levjev (installed beside it; the jev skill until 2026-09-29) - for --judge and the reading at --record only; everything else runs without it
+  version: 1.4.9
+  optional_dependency: levjev (the Jev client, installed beside this folder; the jev skill until 2026-09-29) - for --judge and the reading at --record only; everything else runs without it, and those two say by name when it is missing
   renamed_from: verify-before-done (2026-09-23)
-  source: its author's stated requirement (2026-09-22, extended 2026-09-23) plus the review records of a web app and KiT; siblings measure-in-the-browser and testcatch
+  source: its author's stated requirement (2026-09-22, extended 2026-09-23) plus the review records of a web app and KiT; siblings a rendered-page measuring discipline and a tests-that-can-fail discipline
   owner: SPRIC76
   enforcement: load-bearing (this file) + runtime-enforced (scripts/featuremap.py)
   absorbed: ponytail-review and ponytail-audit (MIT, DietrichGebert/ponytail at e3ba2aa6) into reference/mutate-distill.md
@@ -26,14 +26,23 @@ what exists and how a user reaches it — without it, every session rediscovers 
 app and verifies whatever it happened to notice. **Verification** drives that reach
 path and reads the outcome back — without it, the map is a document that describes
 an app nobody confirmed still behaves that way. **Pattern conformance** keeps the
-codebase honest as memory — because an agent writes what its neighbours wrote, so
-a bad neighbour is contagious and a good pattern can drift somewhere it was never
+codebase honest as memory — because an agent writes what its neighbors wrote, so
+a bad neighbor is contagious and a good pattern can drift somewhere it was never
 designed for.
 
 The aim underneath all three: make the codebase able to tell a stranger the truth
 about itself, so that the easiest path through it is also the correct one. An agent
 with no engineering background and no context will take the shortest concrete
 action available. That is not a flaw to design around — it is the lever.
+
+## Any agent, any workflow
+
+This folder is a skill in the Agent Skills format: any agent that reads SKILL.md
+can use it, and nothing here assumes one host, one editor or one install path.
+The scripts need Python 3.10 or later and nothing else, and run from wherever the
+folder sits. The map, the graph and Mutate each stand alone, beside any other
+skill or none. The one optional dependency is named in the frontmatter, and
+without it only the two Jev readings are skipped, each saying so.
 
 ## Fire this before the sentence, not after
 
@@ -53,7 +62,7 @@ same unreliable witness, one step removed. Before you repeat it:
 2. **Read the observable yourself**: re-run the test it says passed and read the
    count, including skipped; open the page, output or file it says it produced.
 3. **If it touched tests, check the floor did not drop** — a new skip, a removed
-   assertion, a loosened threshold (`testcatch`'s floor guard). "All tests
+   assertion, a loosened threshold (a test-floor guard reads the diff for these). "All tests
    pass" over a diff that skips the failing one is the case this rule exists for.
 4. **Report its work at the grade you verified** and name what you did not re-check.
    Its word never becomes DRIVEN or TESTED by being repeated.
@@ -76,7 +85,7 @@ test suite, because the suite was written from the same misreading.
 | Grade | Means | May be claimed |
 |---|---|---|
 | **DRIVEN** | The feature was operated the way a user operates it and the observable outcome was read back | only with the artifact named: status code, DB row, URL, rendered text, exit code, log line, screenshot |
-| **TESTED** | An automated test exercises it **and** that test has been proven able to fail | only with the re-injection probe recorded — see `testcatch` |
+| **TESTED** | An automated test exercises it **and** that test has been proven able to fail | only with the re-injection probe recorded — a tests-that-can-fail discipline covers how |
 | **ASSERTED** | The code was read and looks right | always available, never sufficient |
 | **UNKNOWN** | Never checked | the honest default for everything else |
 
@@ -107,7 +116,7 @@ reported as working.** Drive it or test it, or say plainly that you did not.
    twice passes every does-it-check-out test.
 8. **Check you built it the way this codebase builds things**, and that you did not
    carry a pattern somewhere it was never designed for. You wrote what your
-   neighbours wrote; confirm the neighbours were right. See
+   neighbors wrote; confirm the neighbors were right. See
    `reference/pattern-conformance.md`. If you had to invent a convention because
    none was findable, that is the finding — write the rule with its canonical
    example rather than leaving the next agent to copy you.
@@ -177,7 +186,7 @@ symlink, or takes a git lock (`GIT_OPTIONAL_LOCKS=0`); and it refuses a file it
 never saw (exit 2) rather than saying nothing depends on it. Every command ends in
 a `RESULT:` line — exit 0 ok, 1 a finding, 2 could not run.
 
-**Beside its siblings.** How or why code works is levjev search's; an exact string
+**Beside its siblings.** How or why code works is a code-search tool's; an exact string
 or file name is grep's; a diagram of an architecture is a diagramming skill's. The graph is
 structure only, and a graph edge is not proof a feature works — that is still the
 drive-and-read-back loop above.
@@ -194,9 +203,9 @@ stage 3, distill, is `reference/mutate-distill.md`.
 
 | Question | Command (`scripts/mutate.py …`) | What it reads back |
 |---|---|---|
-| What is in this repo, and what would it do to us? | `inventory <folder> [--skill <name>] [--json --out <file>]` | per skill: name against folder, the description's length, unquoted `: ` and "not for", licence, copies, references (inside, outside - read, within the folder - and dangling), dependencies and whether each is here, and red flags with file, line and what matched; the repo's own wiring (hooks, plugin manifests) too |
+| What is in this repo, and what would it do to us? | `inventory <folder> [--skill <name>] [--json --out <file>]` | per skill: name against folder, the description's length, unquoted `: ` and "not for", license, copies, references (inside, outside - read, within the folder - and dangling), dependencies and whether each is here, and red flags with file, line and what matched; the repo's own wiring (hooks, plugin manifests) too |
 | What do we already have that does this? | `collate <inventory.json> --home <dir>` | each skill against the homed ones: likely duplicate or sibling, the words and triggers they share, and an empty decision column |
-| What did we take, from where, and why? | `ledger [--add --source <url> --commit <sha> --licence <id> --absorbed "what -> where" --left-out "what: why" --verdict absorbed\|kept-candidate\|skipped --reason <why>]` | the rows; a row without a reason is refused and nothing is written |
+| What did we take, from where, and why? | `ledger [--add --source <url> --commit <sha> --license <id> --absorbed "what -> where" --left-out "what: why" --verdict absorbed\|kept-candidate\|skipped --reason <why>]` | the rows; a row without a reason is refused and nothing is written |
 | Has a source moved since we took from it? | `evolve [--online]` | offline, what it would check; `--online`, each pinned commit against the upstream HEAD by `git ls-remote` |
 
 **Red flags** fall in eleven categories: network, install, exec, config,
@@ -232,7 +241,7 @@ outside the skill folder.
 
 **Beside its siblings:**
 - Whether a rebuilt piece works: this skill's drive-and-read-back loop.
-- Whether its tests can fail: `testcatch`.
+- Whether its tests can fail: a tests-that-can-fail discipline.
 - How our own files depend on each other: `depgraph.py`.
 
 Mutate reads other people's work. It does not grade ours.
@@ -246,10 +255,10 @@ just read back, and keeps the reading in the capture. So every proof gets a Jev
 reading without anyone remembering to ask (before that, on 2026-09-29, Jev was
 asked a handful of times a day). Write `intent:` as the outcome the operator wanted, not the
 story of how the work came about, or there is nothing to hold the observable
-against. It asks through the **levjev skill's**
-client, installed beside this one, which holds the pin, the lint and the key. How to
-ask Jev anything lives in LevJev, the one home for Jev, not here. Without it, `--judge` says so and
-asks nothing. The two thresholds belong to this skill's code and stay unvalidated
+against. It asks through the optional Jev client this file's `optional_dependency`
+names, installed beside this one, which holds the pin, the lint and the key; how to
+ask Jev anything lives with that client, not here. Without it, `--judge` and
+`--record` say so by name and ask nothing, and everything else runs. The two thresholds belong to this skill's code and stay unvalidated
 placeholders until `reference/jev-calibration.md` records the operator's own data. Until then,
 a reading is something to look at, never a gate.
 
@@ -271,9 +280,9 @@ mobile width" is a report. "Checkout works" is not.
 
 ## What this skill never does
 
-Accept a green run as evidence the run could have gone red (`testcatch`
-owns that). Judge a rendered appearance by eye or by stylesheet
-(`measure-in-the-browser` owns that — this skill sends you there and does not
+Accept a green run as evidence the run could have gone red (a tests-that-can-fail
+discipline owns that). Judge a rendered appearance by eye or by stylesheet
+(measuring the rendered page owns that — this skill sends you there and does not
 restate it). Let a script overwrite the human-authored half of a map, or claim
 coverage of a stack the extractor could not parse — an extractor that skips what it
 cannot read reports a clean map over an unmapped app, which is the worst output
@@ -285,8 +294,8 @@ available.
 - `reference/verification-protocol.md` — how to drive and read back per surface: web UI, settings and config, CLI, API, background job, data
 - `reference/proof-capture.md` — the proof store, what a capture record must carry, how to analyze across captures, and the metrics a driven run yields for free
 - `reference/pattern-conformance.md` — why an anti-pattern spreads rather than sits, the two failure directions (contagion, and a good pattern drifting out of scope), the ratchet, and writing a rule for an agent with no context
-- `reference/jev-calibration.md` — the one question Verafox asks Jev, its two thresholds, how they get validated on the operator's own data, and the first readings (the client's rules are the levjev skill's)
-- `scripts/featuremap.py` — `--init`, `--check` (drift + stale proof + unparsed surfaces + anti-pattern spread + pattern drift, exits non-zero so a hook can refuse on it), `--write` (derived block only), `--reaim` (move each hand-mapped `code:` or `entry:` range whose lines moved to where they are now, stamped `@ <commit>`, and name each range it leaves and why), `--record` (append a capture and analyze it against the last one), `--ratchet` (lower a ceiling to what is present; it will never raise one), `--list` / `--compare` (both faces, any ref), `--live` (what production serves), `--judge` (the Intended bar, through Jev). `--help` says what every flag does; a whole `--record` call (`--feature`, `--grade`, `--result`, `--observable`, `--how`, `--bound`, `--conditions`, `--metric`, `--artifact`) is in `reference/proof-capture.md`, and a whole `--live` call (`--url`, `--fingerprint`, `--probe`, `--branch`) in `reference/feature-map-schema.md`
+- `reference/jev-calibration.md` — the one question Verafox asks Jev, its two thresholds, how they get validated on the operator's own data, and the first readings (the client's rules are the client's own)
+- `scripts/featuremap.py` — `--init`, `--check` (drift + stale proof + unparsed surfaces + anti-pattern spread + pattern drift, exits non-zero so a hook can refuse on it), `--write` (derived block only), `--reaim` (move each hand-mapped `code:` or `entry:` range whose lines moved to where they are now, stamped `@ <commit>`, and name each range it leaves and why; a one-line pointer whose own line was rewritten is found by what the code derives for it and marked REWRITTEN, or named `rewritten: re-aim by hand`, which fails `--check`), `--record` (append a capture and analyze it against the last one), `--ratchet` (lower a ceiling to what is present; it will never raise one), `--list` / `--compare` (both faces, any ref), `--live` (what production serves), `--judge` (the Intended bar, through Jev). `--help` says what every flag does; a whole `--record` call (`--feature`, `--grade`, `--result`, `--observable`, `--how`, `--bound`, `--conditions`, `--metric`, `--artifact`) is in `reference/proof-capture.md`, and a whole `--live` call (`--url`, `--fingerprint`, `--probe`, `--branch`) in `reference/feature-map-schema.md`
 - `scripts/selftest.py` — the cases `featuremap.py` must not regress on (it prints the count; a count copied into prose goes stale), driven through the command line rather than by importing the functions. Both halves of every red-green pair are in it. Most cases exist because a real run failed: `__esModule` minted as a keyboard shortcut out of a minified bundle, and the six blind spots found when a web app first adopted it by hand
 - `scripts/depgraph.py` — the dependency graph: `explain`, `path`, `affected [--since]`, `hubs`, `cycles [--links] [--fail-on-cycles]`, `clusters`, `tour`, `html`, `json`; `--graph` answers from a saved export, `--inferred` adds name-matched calls
 - `scripts/depgraph_selftest.py` — the cases `depgraph.py` must not regress on, driven through the command line; cases 15-21 each come from a real run on one web app, KiT or a static site that was wrong
@@ -295,6 +304,7 @@ available.
 - `scripts/mutate.py` — `inventory`, `collate --home`, `ledger`, `evolve [--online]` (the only network call)
 - `scripts/mutate_selftest.py` — the cases `mutate.py` must not regress on, driven through the command line; a quiet skill for every false-positive class the eight-clone calibration found, a calib skill for every miss, and a check that every detector fires in the fixture
 - `templates/FEATURE-MAP.md` — the instance a project gets
+- `CHANGELOG.md` — what changed for someone upgrading, version by version from 1.4.5, and what an upgrade can turn red with no code change
 
 ## Before changing this skill
 
