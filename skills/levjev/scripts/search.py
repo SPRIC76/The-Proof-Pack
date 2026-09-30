@@ -2,14 +2,10 @@
 """search.py - ask a repository a question; Jev judges each excerpt, code does the rest.
 
 Version 1.0 | Deps: Python 3 standard library only; jev.py beside it |
-Parent: levjev skill 1.0.3 | Path: scripts | Filename: search.py | Created: 2026-09-29
+Parent: levjev skill 1.0.5 | Path: scripts | Filename: search.py | Created: 2026-09-29
 Replaces the third-party jevgrep
 (@dzhng/jevgrep 0.7.0, MIT), whose design it learned from and none of whose code
-it carries.Updated: 2026-09-30 04:22 ET — levjev 1.0.2: the header names the version; --include-sensitive
-and --cache-dir are documented in SKILL.md (the pack's review); unchanged code.
-Updated: 2026-09-30 05:03 ET — levjev 1.0.3: the plan names each file over the size cap with its size and the
---max-file-bytes that reads it, and a top that is mostly documentation says which --exclude
-searches the code alone (one web app's first use; search_selftest.py case 5)
+it carries.
 
 WHY IT EXISTS (2026-09-29): one client, one set of rules. jevgrep supports macOS
 and Linux and keeps its own credentials file; this runs natively on Windows

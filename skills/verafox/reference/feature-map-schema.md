@@ -10,7 +10,7 @@ from the map alone, without reading the source first.
 | Half | Who writes it | `--write` behaviour |
 |---|---|---|
 | **DERIVED** | `featuremap.py`, from routes, handlers, JSX, CLI definitions, the rendered DOM | overwritten on every `--write` |
-| **AUTHORED** | a human or an agent exercising judgment | **never** touched by any script, beyond `--reaim` moving a `code:` or `entry:` pointer's numbers to where git measures its unchanged lines now, stamped ` @ <commit>` with the commit those lines are in |
+| **AUTHORED** | a human or an agent exercising judgment | **never** touched by any script, beyond `--reaim` moving a `code:` or `entry:` pointer's numbers to where git measures its unchanged lines now, stamped ` @ <commit>` with the commit those lines are in, and `--ratchet` lowering a ceiling. `--write`, `--reaim` and `--ratchet` keep the map's line endings as they read them: a map committed with CRLF stays CRLF, and each edit is a diff of the lines it changed (1.4.6) |
 
 They are separated by explicit markers in the file so the generator can never eat
 the judgment. A map that mixes them loses the authored half the first time someone
@@ -25,14 +25,14 @@ regenerates it, which is the one failure that makes people stop keeping maps.
 | `id` | stable slug, e.g. `checkout.submit` | proof records and drift reports reference features across renames |
 | `name` | what a user would call it | the operator asks "does it have X" in their words, not the function's name |
 | `surface` | `web-ui` · `setting` · `cli` · `api` · `job` · `data` · `auth` | the verification method differs per surface; picking the wrong one is how a setting gets "verified" by watching it save |
-| `code` | `path:line` of the thing that decides, or `path:first-last` for its span | so the next agent changes the right place, and so staleness is measured on that region alone: a change within 30 lines of a single line, or inside a declared span, stales the proof; a change elsewhere in the same file does not. The numbers are read in the lines of the commit that last wrote that map line (git blame), and `--check` fails when code added or removed above them has moved those lines; `--reaim` moves them. A change is held against the side of the diff those numbers are in: today's lines when the file has not changed since that map line was written (a range `--reaim` just moved, for one), otherwise the range carried into the proof commit's lines. Only where git cannot blame the map are both sides tried, and then a range can meet the other side's code by number. A range with a change inside it is moved only when its DRIVEN or TESTED proof names a later commit, which covers that change: it is carried through the proof's lines to today's. A move is reported only when it changes the pointer's text: a one-line pointer carried to a region that starts on its own line stays as written (1.4.3, KiT's line-1 loop). A field may hold several pointers, alone or in prose (`A:99-103; its mark B:403-436`), and each is read on its own - moved, checked and staled by its own file. A pointer may carry ` @ <commit>`, the commit whose lines its numbers are in: `--reaim` writes it on each range it moves while the file is clean at HEAD, and it is read before blame, so a re-aimed map left uncommitted is still read in its own commit's lines; a hand edit of the numbers drops the stamp or sets it to the commit the new numbers are in. A pointer neither committed nor stamped is read in today's lines, and the PASS says so by name when its file has changed since the map's last commit. A range that moved with a change inside it that no proof covers stays where it is and is named - by `--reaim` as not moved, with why, and by `--check` beside its stale proof and as NOT re-aimed. A pointer-shaped string naming no file under the project (`BaseLayout.astro:138`, no folder) fails `--check` by name (1.4.5, a static site) |
+| `code` | `path:line` of the thing that decides, or `path:first-last` for its span | so the next agent changes the right place, and so staleness is measured on that region alone: a change within 30 lines of a single line, or inside a declared span, stales the proof; a change elsewhere in the same file does not. The numbers are read in the lines of the commit that last wrote that map line (git blame), and `--check` fails when code added or removed above them has moved those lines; `--reaim` moves them. A change is held against the side of the diff those numbers are in: today's lines when the file has not changed since that map line was written (a range `--reaim` just moved, for one), otherwise the range carried into the proof commit's lines. Only where git cannot blame the map are both sides tried, and then a range can meet the other side's code by number. A range with a change inside it is moved only when its DRIVEN or TESTED proof names a later commit, which covers that change: it is carried through the proof's lines to today's. A move is reported only when it changes the pointer's text: a one-line pointer carried to a region that starts on its own line stays as written (1.4.3, KiT's line-1 loop). A field may hold several pointers, alone or in prose (`A:99-103; its mark B:403-436`), and each is read on its own - moved, checked and staled by its own file. A pointer may carry ` @ <commit>`, the commit whose lines its numbers are in: `--reaim` writes it on each range it moves while the file is clean at HEAD, and it is read before blame, so a re-aimed map left uncommitted is still read in its own commit's lines; a hand edit of the numbers drops the stamp or sets it to the commit the new numbers are in. A pointer neither committed nor stamped is read in today's lines, and the PASS says so by name when its file has changed since the map's last commit. A range that moved with a change inside it that no proof covers stays where it is and is named - by `--reaim` as not moved, with why, and by `--check` beside its stale proof and as NOT re-aimed. A pointer-shaped string naming no file under the project (`Layout.astro:138`, no folder) fails `--check` by name (1.4.5, a static site). A host with a port is not a pointer - `localhost:3000`, `app.example.com:8443`, `127.0.0.1:8080`, `[::1]:5173`, a URL - because a pointer names a path: a `/` in it, an extension that is not a host label, or a file that exists (1.4.6). A range `--reaim` declines is printed with the text at its ends: where its first line is now, and, for an end whose text changed, that the number is the edge of that change and not a line read by its text (1.4.6) |
 | `status` | `live` · `hidden` · `flagged` · `dead` | a feature behind a flag verified in the on state is not verified for users |
 
 ### Reach — how the user gets there — AUTHORED, DOM parts DERIVED
 
 | Field | Answers | Why it exists |
 |---|---|---|
-| `entry` | the URL, command, endpoint or event that starts it | "how does the user reach it". A `path:line` pointer inside it (`its slot is src/pages/index.astro:310-312`) is read like one in `code:` - re-aimed and checked for movement, and named when it resolves to no file - but never stales the proof (1.4.5) |
+| `entry` | the URL, command, endpoint or event that starts it | "how does the user reach it". A `path:line` pointer inside it (`its slot is src/pages/index.astro:310-312`) is read like one in `code:` - re-aimed and checked for movement, and named when it resolves to no file - but never stales the proof (1.4.5). A host with a port (`localhost:3000`, `https://x.y:443/path`) is the entry itself, never a pointer (1.4.6) |
 | `path` | the ordered steps from a cold start to the feature being usable | a feature reachable only from state you forgot to set up reads as broken |
 | `operate` | exactly how it is worked: click, type, drag, keyboard | their question — click *or* keyboard, and they fail independently |
 | `keys` | every keyboard shortcut, and whether it is global or scoped | a shortcut that works only while an input is unfocused is a different feature. Derived shortcuts arrive as `key.<modifiers>-<keys>` with their scope in the found-as column |
@@ -55,17 +55,21 @@ regenerates it, which is the one failure that makes people stop keeping maps.
 |---|---|---|
 | `grade` | `DRIVEN` · `TESTED` · `ASSERTED` · `UNKNOWN` | conflating a read-through with a driven run is how "fully verified" gets claimed over untested code |
 | `proof` | pointer into the proof store | a grade with no artifact is an opinion |
-| `verified_at` | `date @ commit` | the commit is what staleness is measured from: any change to the feature's region since then, committed or not, stales the proof. With no commit git can resolve, it is measured by day only, and `--check` says so by name. A passing DRIVEN or TESTED `--record` prints the value to write, `date @ commit` of the capture, and warns when the entry holds a work label (K82.1) instead (1.4.3) |
+| `verified_at` | `date @ commit` | the commit is what staleness is measured from: any change to the feature's region since then, committed or not, stales the proof. With no commit git can resolve, it is measured by day only, and `--check` says so by name. A passing DRIVEN or TESTED `--record` prints the value to write, `date @ commit` of the capture, and warns when the entry holds a work label (a ticket id) instead (1.4.3) |
 | `bound` | what the verification did **not** cover | an unbounded pass claim is the defect |
 
 ## Derived ids
 
 The extractor mints ids under fixed prefixes, and an authored entry keyed by one of
 them is tied to the code: `endpoint.` · `route.` · `control.` · `region.` · `key.` ·
-`cli.` · `script.` · `env.` · `deploy.` · `ci.`. A feature found by hand takes its own prefix — `ui.`, `setting.`,
+`cli.` · `cmd.` · `script.` · `env.` · `deploy.` · `ci.`. A feature found by hand takes its own prefix — `ui.`, `setting.`,
 `job.` — and is never judged against the derived table.
 
 - A route's id is its path, and `/` is `root`.
+- An argparse subcommand (`add_parser("explain")`, on a subparsers object or a
+  Parser subclass) is `cmd.<file>-<name>` on the dev face, at the line that adds
+  it, found as `subcommand <name>`: `cmd.depgraph-explain` for depgraph.py (1.4.6).
+  Its flags stay `cli.` capabilities of the file, as before.
 - A control or region is named by its `aria-label` or `data-testid`: a quoted string
   as written, a template by its fixed words (`Unpin ${title}` is `unpin`), any other
   expression by the first literal it shows. A label with no fixed words has no id; it
@@ -98,7 +102,7 @@ user's face and the development face.
 | Face | What lands there | Why |
 |---|---|---|
 | `user` | `route.` `control.` `region.` `key.`; an endpoint that serves a page; an endpoint a client file calls (the found-as column names the file and line) | a person reaches it from a screen |
-| `dev` | `cli.` `script.` `env.` `deploy.` `ci.`; an endpoint no client file calls | an operator or developer reaches it, or nothing in the client does |
+| `dev` | `cli.` `cmd.` `script.` `env.` `deploy.` `ci.`; an endpoint no client file calls | an operator or developer reaches it, or nothing in the client does |
 | `unclassified` | an endpoint whose path has no fixed part to search for (`/<id>`) | guessing would put it on the wrong face half the time |
 
 A test file is never counted as a client. An authored `- face: user` or `- face: dev`
@@ -133,6 +137,18 @@ from render.yaml — or the same four from the command line:
 | `probes` | safe GET paths, comma-separated | a health check is read back; a path with side effects must never be listed, because it would be requested |
 | `branch` | the branch production deploys from (default: render.yaml's, else `main`) | what the fingerprint is placed in |
 | `root` | the repository folder the site serves at `/` (`public` for Astro, Vite, Next) | `/licenses/X.txt` is `public/licenses/X.txt` in git; undeclared, the path as served, then `public/` and `static/`, are tried, matched by content |
+
+From the command line, for a production the map does not declare (`root` is read
+from the map only):
+
+```
+python -B scripts/featuremap.py --live --url https://app.example.com \
+  --fingerprint robots.txt --probe /health --probe /version --branch main
+```
+
+`--fingerprint` is the path as production serves it (`robots.txt`, found in the
+repository as `public/robots.txt`), `--probe` repeats, and with no `--url` every
+authored entry that declares a `url:` is read instead.
 
 Only those paths and the fingerprint are requested, always with GET, and a redirect is
 reported, never followed. The answer is only as current as the last `git fetch`,

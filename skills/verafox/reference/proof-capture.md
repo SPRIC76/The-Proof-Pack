@@ -44,6 +44,22 @@ Every field is required. A record missing one is not a capture.
 Values, never adjectives. "Fast" is not a metric and "looked right" is not an
 observable.
 
+One `--record` call writes one record; `at` and `commit` are read from the clock
+and from git, and every other field is a flag (`featuremap.py --help` says what
+each does):
+
+```
+python -B scripts/featuremap.py --record --feature checkout.submit --grade DRIVEN \
+  --result pass --observable "order row 8841 exists; cart count 0" \
+  --how "added one item, paid with the test card, read the orders table" \
+  --bound "one item, Chrome 1920, card 4242" --conditions "Chrome 129, light, seed data" \
+  --metric duration_ms=812 --metric console_errors=0 --artifact .verify/shots/pay.png
+```
+
+`--feature`, `--grade` and `--result` are required, and `--observable` is too for
+DRIVEN and TESTED. `--metric` and `--artifact` repeat. A passing DRIVEN or TESTED
+record prints the `verified_at` value to write into the map.
+
 ## Metrics fall out of the driving
 
 A run that drove the feature already knows these, so not recording them is throwing

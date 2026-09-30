@@ -59,8 +59,8 @@ it exists, or the file named by --ledger:
 
   {"items": [{"kind": "test-removed", "file": "tests/test_calc.py",
               "what": "test_sub", "verdict": "intended",
-              "why": "sub() left with the feature in K80"}],
-   "ceiling": 1, "ignore": ["vendor/*"]}
+              "why": "sub() left with the feature in ticket 80"}],
+   "ceiling": 1, "ignore": ["vendor/*"], "about": "why these drops are known"}
 
 `what` is the name, the line text or the counts exactly as the guard prints
 them ("file deleted" for a deleted test file); each dropped line prints its
@@ -69,6 +69,11 @@ the change is stale and fails: the ledger only shrinks. The same entry twice
 fails. `ceiling`, when given, is a whole number and only comes down.
 `verdicts` may name the ledger's own verdicts and what each needs; the
 defaults are intended, moved (needs `by`), replaced (needs `by`) and deferred.
+`about`, when given, is text for the reader - what the ledger is for - and
+the guard never reads it. Those five keys are the ledger's whole vocabulary: a
+key it does not take, or one of the wrong type (a ceiling that is not a whole
+number included), is a bad ledger, and the run ends in RESULT: ERROR naming it
+(exit 2) rather than reading past it.
 Canonical for the shape: a production-supersession ledger, where a test fails on
 any silent loss unless a fixture names the verdict and the reason.
 
@@ -608,14 +613,42 @@ def analyse(path, old, new, findings, notes):
 
 # --------------------------------------------------------------------- ledger
 
+LEDGER_KEYS = ("about", "items", "verdicts", "ceiling", "ignore")
+
+
 def load_ledger(path):
+    """The ledger as an object with the keys it takes, each of its type, or a
+    GitError (exit 2, never clean). {"drops": [...]} used to read as an empty
+    ledger, and the drop it meant to grandfather failed as new (the pack's
+    review, 2026-09-30); a ceiling in words, true or -1 was a ledger problem,
+    exit 1, where the docs promise exit 2 (its second review, the same day)."""
     try:
         with open(path, encoding="utf-8") as fh:
             doc = json.load(fh)
     except (OSError, ValueError) as e:
         raise GitError("ledger %s could not be read: %s" % (path, e))
-    if not isinstance(doc, dict) or not isinstance(doc.get("items", []), list):
-        raise GitError("ledger %s is not an object with an items list" % path)
+    if not isinstance(doc, dict):
+        raise GitError("ledger %s is not an object" % path)
+    unknown = sorted(k for k in doc if k not in LEDGER_KEYS)
+    if unknown:
+        raise GitError("ledger %s: key %s is not one the guard takes - it takes %s"
+                       % (path, ", ".join(repr(k) for k in unknown), ", ".join(LEDGER_KEYS)))
+    if not isinstance(doc.get("items", []), list):
+        raise GitError("ledger %s: items is not a list" % path)
+    if "verdicts" in doc and not (isinstance(doc["verdicts"], dict) and all(
+            isinstance(k, str) and isinstance(v, str) for k, v in doc["verdicts"].items())):
+        raise GitError("ledger %s: verdicts is not an object of name -> what it needs"
+                       % path)
+    if "ignore" in doc and not (isinstance(doc["ignore"], list)
+                                and all(isinstance(g, str) for g in doc["ignore"])):
+        raise GitError("ledger %s: ignore is not a list of path patterns" % path)
+    if "about" in doc and not isinstance(doc["about"], str):
+        raise GitError("ledger %s: about is not text" % path)
+    if "ceiling" in doc and not (isinstance(doc["ceiling"], int)
+                                 and not isinstance(doc["ceiling"], bool)
+                                 and doc["ceiling"] >= 0):
+        raise GitError("ledger %s: ceiling %r is not a whole number"
+                       % (path, doc["ceiling"]))
     return doc
 
 
@@ -666,10 +699,8 @@ def apply_ledger(doc, name, findings):
             f.ledger = "[%s] %s%s" % (it["verdict"], str(it["why"]).strip(),
                                       ("  by: " + str(it["by"])) if it.get("by") else "")
     if "ceiling" in doc:
-        ceiling = doc["ceiling"]
-        if not isinstance(ceiling, int) or isinstance(ceiling, bool) or ceiling < 0:
-            problems.append("ceiling %r is not a whole number" % (ceiling,))
-        elif len(items) > ceiling:
+        ceiling = doc["ceiling"]                  # a whole number: load_ledger
+        if len(items) > ceiling:
             problems.append("%d items > ceiling %d - the ceiling only comes down; "
                             "raise it only with the operator's word" % (len(items), ceiling))
         elif len(items) < ceiling:

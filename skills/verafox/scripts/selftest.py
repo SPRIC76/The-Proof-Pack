@@ -180,16 +180,20 @@ def main():
               or rc == 0, out)
         # From a static site (2026-09-29): the header line is how its author dates and
         # places a file, so --init must write the template's, filled, as the map's first line.
+        # The pack's review (2026-09-30): the stamp said "ET" on every machine; it
+        # now carries the clock's own offset from UTC.
         with open(os.path.join(a, "FEATURE-MAP.md"), encoding="utf-8") as fh:
             first = fh.readline().rstrip("\n")
-        stamp = re.search(r"Created: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) ET`$", first)
+        stamp = re.search(r"Created: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) UTC([+-]\d{2}:\d{2})`$", first)
         age = (datetime.datetime.now() - datetime.datetime.strptime(stamp.group(1), "%Y-%m-%d %H:%M")
                ).total_seconds() if stamp else None
+        z = datetime.datetime.now().astimezone().strftime("%z")
         check("--init writes the template's header line first, filled: this project's "
-              "name, and a Created stamp read from the clock",
+              "name, and a Created stamp read from the clock with its UTC offset, never ET",
               first.startswith("`Version 1.1 | Deps: verafox skill | Parent: one | Path: ./ | "
                                "Filename: FEATURE-MAP.md | Created: ")
-              and "{{" not in first and age is not None and -60 <= age <= 600, first)
+              and "{{" not in first and age is not None and -60 <= age <= 600
+              and stamp.group(2) == z[:3] + ":" + z[3:], first)
         rc, out = run(a, "--check")
         check("RED: exits non-zero on unmapped features", rc == 1, out)
         check("RED: names the unmapped ids", "endpoint.health" in out
@@ -1447,7 +1451,7 @@ def main():
               and "`key.arrowup-or-arrowdown`" in mp and "`key.l`" in mp, keys33)
 
         # ------------------------------ 34 a key read into a local first
-        # From KiT's landing page, 2026-09-24 (site/src/pages/index.astro:560):
+        # From KiT's landing page, 2026-09-24:
         # `const k = e.key.toLowerCase()`, then `k === "l"` - no key. row at all.
         print("\n34. a shortcut tested through a local variable is still found")
         t34 = os.path.join(tmp, "thirtyfour")
@@ -1726,7 +1730,7 @@ def main():
               "missing: %s\n%s" % (missing, out[-1500:]))
 
         # ------------------------------ 46 a site served from public/
-        # mk1made.us serves public/licenses/X.txt at /licenses/X.txt (Astro,
+        # A static site serves public/licenses/X.txt at /licenses/X.txt (Astro,
         # Vite, Next), so looking the served path up in git as-is found nothing
         # and --live said UNKNOWN on a site that runs main.
         print("\n46. --live places a file served from public/")
@@ -2133,7 +2137,7 @@ def main():
               rc == 0 and "endpoint.orders" in out and "user 1" in out, out[-1500:])
 
         # ------------------------------ 56 a move that rewrites nothing is no move
-        # KiT, 2026-09-30 (K92.1): tools/publish_release.ps1:1, written at one
+        # KiT, 2026-09-30: a release script's line 1, written at one
         # commit; the script's header grew around line 1 and the proof was taken
         # after. Carried through the proof the line widened to 1-8, a one-line
         # pointer prints only its start, so --check said ":1 -> :1", --reaim
@@ -2170,7 +2174,7 @@ def main():
               and "no code range has moved" in out, out[-800:])
 
         # ------------------------------ 57 a label where a commit belongs
-        # KiT, 2026-09-30: verified_at "2026-09-29 @ K82.1" names a work label,
+        # KiT, 2026-09-30: verified_at "2026-09-29 @ TICKET-X" names a work label,
         # not a commit, so --check reads it by day and by whole file - any change
         # to the file on a later day stales it, and one later that day is missed.
         # --record knows the commit it captured at; it says what to write.
@@ -2180,7 +2184,7 @@ def main():
         fixture(t57)
         run(t57, "--init")
         author(t57, base39 + ENTRY % ("dev.lab", "lab", "cli", "app.py:4",
-                                      "DRIVEN", "2026-09-29 @ K82.1"))
+                                      "DRIVEN", "2026-09-29 @ TICKET-X"))
         commit(t57, "map with a label")
         rc, out = run(t57, "--record", "--feature", "dev.lab", "--grade", "DRIVEN",
                       "--result", "pass", "--observable", "a value read back", "--how", "ran it")
@@ -2188,7 +2192,7 @@ def main():
         check("RED: a passing capture names the verified_at to write, with its commit",
               rc == 0 and want57 in out, out[-800:])
         check("...and warns that the label it replaces is read by day only",
-              "K82.1" in out and "by day" in out, out[-800:])
+              "TICKET-X" in out and "by day" in out, out[-800:])
 
         # ------------------------------ 58 a re-aimed range left uncommitted
         # A static site, 2026-09-30: --reaim moved nine ranges at one commit,
@@ -2269,7 +2273,7 @@ def main():
         # `entry:` holding `its slot is B:310-312` were never re-aimed or
         # checked - the old pattern read one pointer, at the end of a `code:`
         # line. Four pointers sat four lines short under a PASS, and a bare
-        # `BaseLayout.astro:138` in an entry named no file at all.
+        # `Shell.astro:138` in an entry named no file at all.
         print("\n59. every path:N pointer in a code: or entry: field is read, and one naming no file is named")
         t59 = os.path.join(tmp, "fiftynine")
         os.makedirs(t59)
@@ -2336,8 +2340,8 @@ def main():
               rc == 0, out[-1500:])
 
         # ------------------------------ 60 a move --reaim declines is named
-        # A static site, 2026-09-30: ui.vista's orb-shader.ts:229-1720 gained
-        # a header line above and a comment change inside at 55ba888. --reaim
+        # A static site, 2026-09-30: one section's source range gained
+        # a header line above and a comment change inside at a later commit. --reaim
         # rightly left it - the change postdates its proof - but printed "no
         # code range has moved", and --check showed the stale proof alone: the
         # drift sat hidden until a hand fix. Now both name it.
@@ -2351,7 +2355,7 @@ def main():
         commit(t60, "baseline")
         base60 = head(t60)
         run(t60, "--init")
-        author(t60, base39 + ENTRY % ("ui.vista", "vista", "web-ui", "big.py:20-30",
+        author(t60, base39 + ENTRY % ("ui.scene", "scene", "web-ui", "big.py:20-30",
                                       "DRIVEN", "%s @ %s"
                                       % (datetime.date.today(), base60))
                + ENTRY % ("ui.raw", "raw", "web-ui", "big.py:40-45", "UNKNOWN", ""))
@@ -2362,7 +2366,7 @@ def main():
         commit(t60, "one line above, one changed inside each")
         rc, out = run(t60, "--reaim")
         check("RED: --reaim names the range it declines, where it sits now, and why",
-              rc == 0 and "ui.vista: big.py:20-30 -> big.py:21-31 not moved: a change "
+              rc == 0 and "ui.scene: big.py:20-30 -> big.py:21-31 not moved: a change "
               "inside it postdates its proof @ %s" % base60 in out
               and "no code range has moved" not in out, out[-1500:])
         check("...and one with no proof to carry it, by that reason",
@@ -2374,7 +2378,7 @@ def main():
         check("...and writes neither", "big.py:20-30\n" in m60
               and "big.py:40-45\n" in m60, m60[-1500:])
         rc, out = run(t60, "--check")
-        st60 = [x for x in out.split("\n") if "ui.vista: verified @" in x]
+        st60 = [x for x in out.split("\n") if "ui.scene: verified @" in x]
         check("RED: --check reports the drift beside the stale proof, not instead of it",
               rc == 1 and st60 and "25 at " in st60[0] and "-> big.py:21-31" in st60[0]
               and "not re-aimed" in st60[0], out[-2500:])
@@ -2391,12 +2395,374 @@ def main():
             m60 = fh.read()
         check("re-driven, --reaim carries it through the new proof and still names ui.raw",
               "big.py:21-31" in m60
-              and re.search(r"ui\.vista: big\.py:20-30 -> big\.py:21-31\s*$", out, re.M)
+              and re.search(r"ui\.scene: big\.py:20-30 -> big\.py:21-31\s*$", out, re.M)
               and "ui.raw: big.py:40-45 -> big.py:41-46 not moved" in out, out[-1500:])
         with open(mp60, "w", encoding="utf-8", newline="") as fh:
             fh.write(m60.replace("big.py:40-45", "big.py:41-46"))
         rc, out = run(t60, "--check")
         check("set by hand, the ungraded range passes", rc == 0, out[-1500:])
+
+        # ------------------------------ 61 a host with a port is not a pointer
+        # The pack's review (2026-09-30): `entry: app.example.com:8443` read as a
+        # pointer naming no file - a dotted host ends in a TLD, which looked like
+        # an extension. A token is a pointer when its path names a file under the
+        # project, or is shaped as no host is: a folder separator, or an extension
+        # that is not a TLD-like label. A bare name naming no file (Layout.astro:138,
+        # Shell.astro:138) is still named, as 1.4.5 named it.
+        print("\n61. a host with a port in an entry: field is never read as a pointer")
+        t61 = os.path.join(tmp, "sixtyone")
+        os.makedirs(t61)
+        l61 = ["# line %d" % i for i in range(1, 41)]
+        put(t61, "big.py", "\n".join(l61) + "\n")
+        put(t61, "app.py", APP_V1)
+        git(t61, "init", "-q")
+        commit(t61, "baseline")
+        run(t61, "--init")
+        hosts = ("app.example.com:8443 and localhost:3000; https://x.y:443/path; "
+                 "127.0.0.1:8080; [::1]:5173")
+        hosted = ("### ui.hosts\n\n- name: hosts\n- surface: web-ui\n- code: big.py:20-25\n"
+                  "- entry: %s\n- does: a fixture feature\n- observable: a value read back\n"
+                  "- grade: UNKNOWN\n\n" % hosts)
+        author(t61, base39 + hosted
+               + "### ui.bare\n\n- name: bare\n- surface: web-ui\n"
+               "- entry: the footer (Layout.astro:138) under Shell.astro:138\n"
+               "- does: a fixture feature\n- observable: a value read back\n"
+               "- grade: UNKNOWN\n\n")
+        rc, out = run(t61, "--check")
+        check("RED: no host:port is named as code that does not exist",
+              rc == 1 and not any(h in out for h in ("app.example.com", "x.y:443",
+                                                       "localhost:3000", "127.0.0.1:8080",
+                                                       "1]:5173")), out[-2500:])
+        check("...while a bare name naming no file still is, both of them",
+              "ui.bare -> Layout.astro:138" in out
+              and "ui.bare -> Shell.astro:138" in out, out[-2500:])
+        author(t61, base39 + hosted)
+        rc, out = run(t61, "--check")
+        check("...and with the bare names gone, the hosts alone pass --check",
+              rc == 0, out[-1500:])
+        commit(t61, "map written")
+        put(t61, "big.py", "# new 1\n# new 2\n" + "\n".join(l61) + "\n")
+        commit(t61, "two lines above")
+        rc, out = run(t61, "--reaim")
+        with open(os.path.join(t61, "FEATURE-MAP.md"), encoding="utf-8") as fh:
+            m61 = fh.read()
+        check("--reaim moves the code: range and leaves every host as written",
+              rc == 0 and "big.py:22-27 @" in m61 and "- entry: %s\n" % hosts in m61,
+              out[-1500:] + "\n" + m61[-1200:])
+
+        # ------------------------------ 62 a sibling's modifier does not leak
+        # The pack's review (2026-09-30): `(e.ctrlKey || e.metaKey) && e.key === 'k'`
+        # then `e.altKey && e.key === 'h'` in one listener minted key.mod-alt-h -
+        # the either-test was read from the whole handler above the condition, so an
+        # earlier sibling's modifier leaked into the next shortcut. It is read now
+        # from the shortcut's own condition, from a guard (`if (!(a || b)) return`),
+        # or from a local the condition tests (`const mod = a || b`).
+        print("\n62. a modifier in an earlier sibling condition does not leak into the next shortcut")
+        t62 = os.path.join(tmp, "sixtytwo")
+        os.makedirs(t62)
+        put(t62, "static/first.js", "window.addEventListener('keydown', (e) => {\n"
+            "  if ((e.ctrlKey || e.metaKey) && e.key === 'k') { x(); }\n"
+            "  if (e.altKey && e.key === 'h') { fetch('/health'); }\n"
+            "});\n")
+        put(t62, "static/second.js", "window.addEventListener('keydown', (e) => {\n"
+            "  if (e.altKey && e.key === 'h') { fetch('/health'); }\n"
+            "  if ((e.ctrlKey || e.metaKey) && e.key === 'k') { x(); }\n"
+            "});\n")
+        put(t62, "static/local.js", "window.addEventListener('keydown', (e) => {\n"
+            "  const mod = e.ctrlKey || e.metaKey;\n"
+            "  if (mod && e.key === 'p') { p(); }\n"
+            "  if (e.shiftKey && e.key === 'q') { q(); }\n"
+            "});\n")
+        put(t62, "static/guard.js", "window.addEventListener('keydown', (e) => {\n"
+            "  if (!(e.ctrlKey || e.metaKey)) return;\n"
+            "  if (e.key === 'j') { j(); }\n"
+            "});\n")
+        put(t62, "app.py", APP_V1)
+        git(t62, "init", "-q")
+        commit(t62, "baseline")
+        run(t62, "--init")
+        rc, out = run(t62, "--list")
+        ids62 = set(re.findall(r"\bkey\.[\w-]+", out))
+        check("RED: mod-k then alt-h derives key.alt-h, not key.mod-alt-h, in either order",
+              rc == 0 and "key.alt-h" in ids62 and "key.mod-k" in ids62
+              and "key.mod-alt-h" not in ids62, " ".join(sorted(ids62)))
+        check("...a modifier read into a local, and an either-guard, still give mod; a "
+              "shift beside the local stays shift",
+              "key.mod-p" in ids62 and "key.shift-q" in ids62 and "key.mod-j" in ids62
+              and "key.mod-shift-q" not in ids62, " ".join(sorted(ids62)))
+
+        # ------------------------------ 63 a CRLF map stays CRLF
+        # The pack's review (2026-09-30): on a map committed with CRLF, --reaim's
+        # one-pointer edit rewrote every line ending, so the diff was the whole file
+        # without --ignore-cr-at-eol, and --write did the same; _rewrite's docstring
+        # said "a CR is kept" while read() had already dropped them all.
+        print("\n63. a map committed with CRLF stays CRLF under --reaim, --write and --ratchet")
+        t63 = os.path.join(tmp, "sixtythree")
+        os.makedirs(t63)
+        l63 = ["# line %d" % i for i in range(1, 41)]
+        put(t63, "big.py", "\r\n".join(l63) + "\r\n")
+        put(t63, "app.py", APP_V1.replace("\n", "\r\n"))
+        git(t63, "init", "-q")
+
+        def crlf_commit(msg):
+            git(t63, "-c", "core.autocrlf=false", "add", "-A")
+            git(t63, "-c", "core.autocrlf=false", "-c", "user.name=t",
+                "-c", "user.email=t@example.com", "commit", "-q", "-m", msg)
+
+        def crlf_numstat():
+            p = subprocess.run(("git", "-c", "core.autocrlf=false", "diff", "--numstat",
+                                "--", "FEATURE-MAP.md"), cwd=t63, capture_output=True,
+                               timeout=60)
+            return p.stdout.decode("utf-8", "replace").strip()
+
+        def crlf_map():
+            with open(mp63, "rb") as fh:
+                return fh.read()
+
+        crlf_commit("baseline, crlf committed")
+        run(t63, "--init")
+        mp63 = os.path.join(t63, "FEATURE-MAP.md")
+        raw63 = crlf_map().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        a63 = raw63.index(b"<!-- AUTHORED:BEGIN -->") + len(b"<!-- AUTHORED:BEGIN -->")
+        b63 = raw63.index(b"<!-- AUTHORED:END -->")
+        entry63 = ("\n" + base39 + ENTRY % ("ui.span", "span", "web-ui", "big.py:20-25",
+                                            "DRIVEN", "%s @ %s"
+                                            % (datetime.date.today(), head(t63)))
+                   + "\n").replace("\n", "\r\n").encode("utf-8")
+        with open(mp63, "wb") as fh:
+            fh.write(raw63[:a63] + entry63 + raw63[b63:])
+        crlf_commit("map, crlf committed")
+        put(t63, "big.py", "# new 1\r\n# new 2\r\n# new 3\r\n" + "\r\n".join(l63) + "\r\n")
+        crlf_commit("three lines above, crlf")
+        rc, out = run(t63, "--reaim")
+        raw63 = crlf_map()
+        check("RED: --reaim on a CRLF map is a one-line diff, without --ignore-cr-at-eol",
+              rc == 0 and b"big.py:23-28 @" in raw63
+              and raw63.count(b"\r\n") == raw63.count(b"\n")
+              and crlf_numstat().startswith("1\t1\t"),
+              "%s\nCRLF %d of %d | numstat %s" % (out[-600:], raw63.count(b"\r\n"),
+                                                  raw63.count(b"\n"), crlf_numstat()))
+        crlf_commit("re-aimed")
+        rc, out = run(t63, "--write")
+        raw63 = crlf_map()
+        check("RED: --write keeps every line of a CRLF map CRLF",
+              rc == 0 and raw63.count(b"\r\n") == raw63.count(b"\n")
+              and b"<!-- DERIVED:END -->" in raw63,
+              "CRLF %d of %d" % (raw63.count(b"\r\n"), raw63.count(b"\n")))
+        with open(mp63, "wb") as fh:
+            fh.write(raw63.replace(b"<!-- AUTHORED:END -->",
+                                   b"### pattern: no-bare-except\r\n\r\n- rule: a bare "
+                                   b"except swallows KeyboardInterrupt\r\n- canonical: "
+                                   b"app.py:1\r\n- antipattern: ^\\s*except\\s*:\r\n"
+                                   b"- ceiling: 3\r\n\r\n<!-- AUTHORED:END -->"))
+        crlf_commit("a ceiling to lower")
+        rc, out = run(t63, "--ratchet")
+        raw63 = crlf_map()
+        check("RED: --ratchet lowers the ceiling and changes that one line only",
+              rc == 0 and b"- ceiling: 0\r\n" in raw63
+              and raw63.count(b"\r\n") == raw63.count(b"\n")
+              and crlf_numstat().startswith("1\t1\t"),
+              "%s\nCRLF %d of %d | numstat %s" % (out[-600:], raw63.count(b"\r\n"),
+                                                  raw63.count(b"\n"), crlf_numstat()))
+        rc, out = run(t63, "--check")
+        check("...and --check passes on it", rc == 0, out[-1500:])
+
+        # ------------------------------ 64 argparse subcommands are derived
+        # The pack's review (2026-09-30): --check said "every surface file parsed"
+        # over depgraph.py and mutate.py, whose nine and four argparse subcommands
+        # no extractor read; the map carried them by hand as cmd.*. add_parser is
+        # read from the syntax tree now, a Parser subclass included, and cmd. is a
+        # derived prefix: an authored cmd. entry the code no longer derives fails.
+        print("\n64. argparse subcommands are derived as cmd.<file>-<name> on the dev face")
+        t64 = os.path.join(tmp, "sixtyfour")
+        os.makedirs(t64)
+        put(t64, "tool.py", "import argparse\n\n\ndef main():\n"
+            "    ap = argparse.ArgumentParser()\n"
+            "    sub = ap.add_subparsers(dest='cmd')\n"
+            "    p = sub.add_parser('explain', help='what a file imports')\n"
+            "    p.add_argument('--graph')\n"
+            "    sub.add_parser('hubs')\n"
+            "    return ap.parse_args()\n")
+        put(t64, "mut.py", "import argparse\n\n\n"
+            "class Parser(argparse.ArgumentParser):\n"
+            "    def error(self, message):\n        raise SystemExit(2)\n\n\n"
+            "def main():\n    ap = Parser()\n"
+            "    sub = ap.add_subparsers(dest='cmd', parser_class=Parser)\n"
+            "    sub.add_parser('inventory', help='read-only').add_argument('--out')\n"
+            "    return ap.parse_args()\n")
+        put(t64, "app.py", APP_V1)
+        git(t64, "init", "-q")
+        commit(t64, "baseline")
+        run(t64, "--init")
+        with open(os.path.join(t64, "FEATURE-MAP.md"), encoding="utf-8") as fh:
+            m64 = fh.read()
+        rows64 = {r[0]: r for r in re.findall(
+            r"^\| `([^`]+)` \| (\w+) \| cli \| `([^`]+)` \| ([^|]+?) \|$", m64, re.M)}
+        check("RED: each add_parser name is a cmd.<file>-<name> capability on the dev "
+              "face, at its line, found as a subcommand",
+              rows64.get("cmd.tool-explain", ("",) * 4)[1:] == ("dev", "tool.py:7",
+                                                                  "subcommand explain")
+              and "cmd.tool-hubs" in rows64
+              and rows64.get("cmd.mut-inventory", ("",) * 4)[2] == "mut.py:12"
+              and "cli.graph" in rows64 and "cli.out" in rows64, " ".join(sorted(rows64)))
+        author(t64, base39 + ENTRY % ("cmd.tool-gone", "gone", "cli", "tool.py:9",
+                                      "UNKNOWN", ""))
+        rc, out = run(t64, "--check")
+        check("...and an authored cmd. entry the code no longer derives fails as such",
+              rc == 1 and "cmd.tool-gone" in out and "no longer derives" in out,
+              out[-2000:])
+
+        # ------------------------------ 65 a declined range, read by its text
+        # KiT, 2026-09-30: a job's range of 41 lines in its main module had been
+        # authored 33 lines into its function at one commit; --reaim declined it at
+        # a later one and printed 811-851 - faithful to those numbers, and nothing said
+        # what the lines held, so the reading looked wrong and could not be checked.
+        # A declined range now says what its first and last lines hold, whether that
+        # text sits where the numbers put it now, and which end changed inside the
+        # hunk and so is read as that change's edge, not by its text.
+        print("\n65. a range --reaim declines is read back by the text at its ends")
+        t65 = os.path.join(tmp, "sixtyfive")
+        os.makedirs(t65)
+        l65 = (["# line %d" % i for i in range(1, 20)] + ["def poll():"]
+               + ["    step %d" % i for i in range(1, 11)]
+               + ["# tail %d" % i for i in range(1, 11)])
+        put(t65, "mod.py", "\n".join(l65) + "\n")
+        put(t65, "app.py", APP_V1)
+        git(t65, "init", "-q")
+        commit(t65, "baseline")
+        base65 = head(t65)
+        run(t65, "--init")
+        author(t65, base39 + ENTRY % ("job.sync", "sync", "job", "mod.py:22-30", "DRIVEN",
+                                      "%s @ %s" % (datetime.date.today(), base65)))
+        commit(t65, "map written two lines into the body")
+        l65b = (l65[:20] + ["    setup a", "    setup b", "    setup c"] + l65[20:29]
+                + ["    step ten"] + l65[30:])
+        put(t65, "mod.py", "\n".join(l65b) + "\n")
+        commit(t65, "the function grows at its top, and its last line changes")
+        rc, out = run(t65, "--reaim")
+        line65 = [x for x in out.split("\n") if "job.sync:" in x]
+        check("RED: the declined range is printed with its first line's text, where "
+              "that text is now",
+              rc == 0 and line65 and "mod.py:22-30 -> mod.py:25-33 not moved" in line65[0]
+              and 'its first line, "step 2", is at 25 now' in line65[0], out[-1500:])
+        check("...and its last line, which changed, is named as the uncertain end",
+              line65 and 'its last line, "step 10", changed' in line65[0]
+              and "33 is the edge of that change" in line65[0], out[-1500:])
+
+        # ------------------------------ 66 mod in a guard, an alias guard, a block
+        # The pack's second review (2026-09-30): 1.4.6 read the either-test only in
+        # the shortcut's own condition, an unbraced guard, or a local the condition
+        # names, so three common forms lost mod and minted key.k for Ctrl/Cmd+K:
+        # a braced guard `if (!(a || b)) { return; }`, a local used in a guard
+        # `if (!mod) return;`, and a shortcut nested in `if (a || b) { ... }`. The
+        # sibling leak case 62 guards stays shut: a block that has closed, or a
+        # negated either-test, gives nothing to what follows it.
+        print("\n66. mod from a braced guard, an alias guard and an enclosing block")
+        t66 = os.path.join(tmp, "sixtysix")
+        os.makedirs(t66)
+        put(t66, "static/braces.js", "document.addEventListener('keydown', (e) => {\n"
+            "  if (!(e.ctrlKey || e.metaKey)) { return; }\n"
+            "  if (e.key === 'b') { open(); }\n"
+            "});\n")
+        put(t66, "static/aliasguard.js", "document.addEventListener('keydown', (e) => {\n"
+            "  const mod = e.ctrlKey || e.metaKey;\n"
+            "  if (!mod) return;\n"
+            "  if (e.key === 'd') { open(); }\n"
+            "});\n")
+        put(t66, "static/nested.js", "document.addEventListener('keydown', (e) => {\n"
+            "  if (e.ctrlKey || e.metaKey) {\n"
+            "    if (e.key === 'f') { open(); }\n"
+            "  }\n"
+            "  if (e.key === 'z') { zoom(); }\n"
+            "});\n")
+        put(t66, "static/aliasblock.js", "document.addEventListener('keydown', (e) => {\n"
+            "  const cmd = e.ctrlKey || e.metaKey;\n"
+            "  if (cmd) {\n"
+            "    if (e.key === 'g') { go(); }\n"
+            "  }\n"
+            "});\n")
+        put(t66, "static/negated.js", "document.addEventListener('keydown', (e) => {\n"
+            "  if (!(e.ctrlKey || e.metaKey)) {\n"
+            "    if (e.key === 'n') { next(); }\n"
+            "  }\n"
+            "});\n")
+        put(t66, "static/altbraces.js", "document.addEventListener('keydown', (e) => {\n"
+            "  if (!e.altKey) { return; }\n"
+            "  if (e.key === 'w') { w(); }\n"
+            "});\n")
+        put(t66, "app.py", APP_V1)
+        git(t66, "init", "-q")
+        commit(t66, "baseline")
+        run(t66, "--init")
+        rc, out = run(t66, "--list")
+        ids66 = set(re.findall(r"\bkey\.[\w-]+", out))
+        check("RED: a braced either-guard, a local in a guard and an enclosing either-"
+              "block each give mod (key.mod-b, key.mod-d, key.mod-f, key.mod-g)",
+              rc == 0 and {"key.mod-b", "key.mod-d", "key.mod-f", "key.mod-g"} <= ids66
+              and not ids66 & {"key.b", "key.d", "key.f", "key.g"}, " ".join(sorted(ids66)))
+        check("...a braced single-modifier guard gives its modifier (key.alt-w)",
+              "key.alt-w" in ids66 and "key.w" not in ids66, " ".join(sorted(ids66)))
+        check("...while a closed block and a negated either-block give nothing "
+              "(key.z, key.n)",
+              "key.z" in ids66 and "key.n" in ids66
+              and not ids66 & {"key.mod-z", "key.mod-n"}, " ".join(sorted(ids66)))
+
+        # ------------------------------ 67 a file name is not a host
+        # The pack's second review (2026-09-30): 1.4.6 left out any dotted name
+        # whose last label was on a host-label list, so Dockerfile.test:3,
+        # .env.local:2, deploy.run:4 and index.page:9 - files that do not exist -
+        # passed --check silently. A host now needs a host's shape: lower-case
+        # labels, a port of two to five digits, and either two dots or one dot
+        # before a TLD that is not also a common file extension; localhost and
+        # an IPv4 address have no extension and were never pointers.
+        print("\n67. a missing file whose extension is a host label is still named")
+        t67 = os.path.join(tmp, "sixtyseven")
+        os.makedirs(t67)
+        put(t67, "big.py", "\n".join("# line %d" % i for i in range(1, 41)) + "\n")
+        put(t67, "app.py", APP_V1)
+        git(t67, "init", "-q")
+        commit(t67, "baseline")
+        run(t67, "--init")
+        files67 = ("Dockerfile.test:3", ".env.local:2", "deploy.run:4", "index.page:9",
+                   "notes.dev:12")
+        hosts67 = ("app.example.com:8443", "example.com:443", "api.staging.test:8080",
+                   "localhost:3000", "127.0.0.1:8080")
+        author(t67, base39 + "### ui.files\n\n- name: files\n- surface: web-ui\n"
+               "- code: big.py:20-25\n- entry: see %s\n- does: a fixture feature\n"
+               "- observable: a value read back\n- grade: UNKNOWN\n\n"
+               "### ui.hostsonly\n\n- name: hostsonly\n- surface: web-ui\n"
+               "- code: big.py:20-25\n- entry: served at %s\n- does: a fixture feature\n"
+               "- observable: a value read back\n- grade: UNKNOWN\n\n"
+               % (", ".join(files67), ", ".join(hosts67)))
+        rc, out = run(t67, "--check")
+        check("RED: each missing file with a host-label extension is named",
+              rc == 1 and all("ui.files -> %s" % f in out for f in files67), out[-2500:])
+        check("...and no host:port is",
+              not any(h in out for h in hosts67), out[-2500:])
+
+        # ------------------------------ 68 every flag says what it does
+        # The pack's second review (2026-09-30): --record and --live were listed in
+        # SKILL.md, but the flags they need (--feature, --grade, --observable, --url
+        # ...) were documented nowhere, and --help printed each one bare.
+        print("\n68. featuremap.py --help says what every flag does")
+
+        def bare_flags(help_text):
+            """Flags --help lists with nothing beside or below them."""
+            lines, bare = help_text.split("\n"), []
+            for i, ln in enumerate(lines):
+                m = re.match(r"^  (--?[\w-]+)", ln)
+                if not m or m.group(1) == "-h":
+                    continue
+                same = re.search(r"\S\s{2,}\S", ln[2:])
+                below = i + 1 < len(lines) and re.match(r"^ {10,}\S", lines[i + 1])
+                if not same and not below:
+                    bare.append(m.group(1))
+            return bare
+
+        rc, out = run(tmp, "--help")
+        bare68 = bare_flags(out)
+        check("RED: --help gives every flag a line of help",
+              rc == 0 and "--observable" in out and not bare68, " ".join(bare68) or out[-800:])
 
     finally:
         _remove(tmp)

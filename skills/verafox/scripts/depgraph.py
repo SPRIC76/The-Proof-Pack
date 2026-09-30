@@ -113,8 +113,8 @@ def read_bytes(path):
 
 
 def text_of(raw):
-    """UTF-8 with any byte-order mark dropped. One web app's diagnostic script and KiT's
-    kid/firstrun.py begin with one, and `ast` refuses U+FEFF in a string: the
+    """UTF-8 with any byte-order mark dropped. One web app's diagnostic script and
+    one of KiT's modules begin with one, and `ast` refuses U+FEFF in a string: the
     first real run called six such files "python that does not parse"."""
     return raw.decode("utf-8-sig", "replace")
 
@@ -1301,7 +1301,7 @@ def cmd_affected(g, a):
                                     "  (via %s)" % v if d > 1 else "",
                                     "  [test]" if is_test(n) else ""))
     # a test that changed is run too: it is not "affected" by itself, and
-    # KiT's --since 2ec977f left out the two tests that had changed
+    # an --since run on KiT left out the two tests that had changed
     tests = sorted(set(n for _, n in hits if is_test(n)) | set(c for c in changed if is_test(c)))
     if tests:
         print("tests to run: " + ", ".join(tests))

@@ -1,4 +1,4 @@
-`Version 1.1 | Deps: verafox skill | Parent: {{PROJECT}} | Path: ./ | Filename: FEATURE-MAP.md | Created: {{CREATED}} ET`
+`Version 1.1 | Deps: verafox skill | Parent: {{PROJECT}} | Path: ./ | Filename: FEATURE-MAP.md | Created: {{CREATED}}`
 
 # {{PROJECT}} — feature map
 
@@ -100,7 +100,7 @@ where every occurrence looks correct in isolation. Declare either, or both.
   — committed or not — is stale, and `--check` fails on it. Evidence that predates
   its implementation is not evidence.
 - An authored id under a derived prefix (`endpoint.` `route.` `control.` `region.`
-  `key.` `cli.` `script.` `env.` `deploy.` `ci.`) that the code no longer derives fails `--check`, which
+  `key.` `cli.` `cmd.` `script.` `env.` `deploy.` `ci.`) that the code no longer derives fails `--check`, which
   names its likely successor. A feature found by hand takes its own prefix (`ui.`,
   `setting.`).
 - Error, empty and loading states are features. They are the least-driven part of

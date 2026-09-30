@@ -2,7 +2,7 @@
 name: levjev
 description: LevJev (Leverage Jev) - one home for everything Jev, TypeSafe's System One model - typed judgments (a Noul probability, a Choice or a Score) asked one pinned way through scripts/jev.py, and repository search through scripts/search.py, which replaces jevgrep. The client enforces the rules in code - jev-1.13.0 pinned and aliases refused, no state addressed by index, one request per state, nothing Jev cannot do (counting, dates, math, hex/RGB/binary, generation), the key never printed, no threshold gating until validated on the operator's own data. Use when the user says LevJev, Jev, TypeSafe or jevgrep; whenever a judgment or a prompt-and-parse LLM step could become a typed decision; before sending any Jev question (lint it first); when choosing a confidence threshold; and to start on how, why or where behavior works in a repository, before broad text search. Not for exact symbols, strings or filenames (use grep). For TypeSafe's own docs use the vendor's typesafe-ai; where the two disagree, this one wins.
 metadata:
-  version: 1.0.3
+  version: 1.0.5
   merged_from: jev 1.0.0 (split from verafox 1.2.1 on 2026-09-24) and a repository search that replaces the third-party jevgrep (2026-09-29)
   source: its author's standing order for TypeSafe's Jev, the first measured run (2026-09-21), and the finding that Jev was asked only a handful of times a day (2026-09-29)
   owner: SPRIC76
@@ -61,15 +61,33 @@ state and generation. `--check-question` says so every time it passes a question
 ```
 python scripts/jev.py --check-question questions.json   lint only: no request, no key
 python scripts/jev.py --ping                            one tiny real request: proves key and pin
+python scripts/jev.py --help                            what each flag does; --model takes the pin only
 ```
 
 From code, load `scripts/jev.py` and call `ask(state, questions)`. It returns
 `{"answers", "usage", "model", "ms"}`, or raises `Refused` (a request it will not
 send, or an answer it will not use) or `Unavailable` (no key, no network, or the
 service failed). The caller then degrades and **states what it did not judge**.
-`lint(questions)` returns the problems as sentences. Inline the text in named fields
-(`{"message": "...", "question": "Does `message` ask for a refund?"}`), never a path
-into state.
+`lint(questions)` returns the problems as sentences.
+
+`questions` is a map of id to question. A question is an object with `type` (`noul`,
+`choice` or `score`) and `instructions`; a choice carries `criteria` as an object of
+2 to 255 options, a score as a list of 2 to 10 levels. The text under judgment goes in
+`state`, in named fields the instructions refer to by name, never a path into it.
+This map is what `--check-question` accepts, and `selftest.py` runs every map this
+file shows through it:
+
+```json
+{"refund": {"type": "noul",
+            "instructions": "Does the message in `body` ask for a refund?"},
+ "tone": {"type": "choice",
+          "instructions": "What is the tone of the message in `body`?",
+          "criteria": {"calm": "measured and polite",
+                       "angry": "hostile or threatening"}},
+ "heat": {"type": "score",
+          "instructions": "How urgent is the message in `body`?",
+          "criteria": ["can wait a week", "this week", "today", "right now"]}}
+```
 
 The key is `TYPESAFE_API_KEY`, one per machine: in the environment, or in
 `~/.agents/.env`. Check that it is present; never print it; never write
@@ -126,6 +144,10 @@ python scripts/search.py "<question>" <root>             the search; prints the 
 - **When docs fill the top, it says so.** If most of the results shown are
   documentation and the search read code too, the output ends its list with the
   `--exclude` (such as `--exclude '*.md'`) that searches the code alone.
+- **How much is shown is yours.** `--top <n>` shows that many results (10 by
+  default); `--excerpt-lines <n>` trims each shown excerpt to n lines around the
+  question's words (0 by default: the whole chunk). Neither changes what is asked
+  or cached, only what is printed.
 - **The cache is a folder of yours.** Readings live under `~/.cache/levjev/search`;
   `--cache-dir <folder>` moves them (a scratch tree, a CI job), and `--no-cache`
   reads and writes none.

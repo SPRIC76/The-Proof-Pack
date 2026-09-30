@@ -162,7 +162,7 @@ def fixture_real(root):
     put(root, "lib/deepmod.py", "D = 1\n")
     put(root, "a1/twin.py", "W = 1\n")
     put(root, "a2/twin.py", "W = 2\n")
-    # a web app's diagnostic script and KiT's kid/firstrun.py begin with EF BB BF
+    # a web app's diagnostic script and one of KiT's modules begin with EF BB BF
     put(root, "bom.py", "﻿import core\nimport os\n")
     put(root, "ns/one.py", "from . import two\nfrom .deep import three\n")
     # a web app's test suite: `import pkg` of a folder with no __init__.py
@@ -657,8 +657,8 @@ def main():
 
         # ------------------------------------------------ 21 paths built from parts
         # a web app's test reads a module through
-        # os.path.join(BASE, 'api', 'syms.py') and KiT
-        # tests/test_brand.py:351 reads ROOT / "site" / "src" / "pages" / "index.astro";
+        # os.path.join(BASE, 'api', 'syms.py') and one of KiT's
+        # tests reads ROOT / "site" / "src" / "pages" / "index.astro";
         # neither test was among the tests `affected` said to run
         print("\n21. a path joined from parts is a reference, so its test is run")
         jn = os.path.join(tmp, "joins")
@@ -697,8 +697,8 @@ def main():
         rc, out = run(jn, "affected", "api/syms.py")
         check("affected names the test that reads the file as a test to run",
               re.search(r"^tests to run: .*tests/test_reads\.py", out, re.M) is not None, out)
-        # KiT --since 2ec977f: tests/test_brand.py and tests/test_landing_copy.py
-        # changed themselves, and "tests to run" named neither
+        # an --since run on KiT: two of its tests had changed themselves,
+        # and "tests to run" named neither
         rc, out = run(jn, "affected", "api/syms.py", "tests/test_reads.py",
                       "tests/fixtures/data.json")
         check("a test that changed is itself a test to run, and counted; "

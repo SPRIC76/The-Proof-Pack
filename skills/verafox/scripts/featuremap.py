@@ -118,6 +118,25 @@ def read(path):
         return ""
 
 
+def read_keep(path):
+    """The file with its line endings as written - a CRLF map stays CRLF in
+    what --reaim, --write and --ratchet write back. read() folds them, and
+    an edit of one pointer on a CRLF map used to rewrite every line ending
+    (the pack's review, 2026-09-30)."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace", newline="") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def _eol(text):
+    """The line ending a file uses throughout, for text this script adds to it:
+    CRLF when every line ends so, else LF."""
+    n = text.count("\n")
+    return "\r\n" if n and text.count("\r\n") == n else "\n"
+
+
 def write(path, text):
     parent = os.path.dirname(path)
     if parent and not os.path.isdir(parent):
@@ -687,11 +706,23 @@ _PLAUSIBLE_KEY = re.compile(
     r"^(?:.|Enter|Escape|Esc|Tab|Backspace|Delete|Insert|Home|End|PageUp|"
     r"PageDown|Arrow(?:Up|Down|Left|Right)|F\d{1,2}|Key[A-Z]|Digit\d|"
     r"Numpad\w+|Space|Spacebar)$")
-_MOD_GUARD = re.compile(r"!\s*[\w$]+\.(ctrl|alt|shift|meta)Key\s*\)\s*return\b")
+_MOD_GUARD = re.compile(r"!\s*[\w$]+\.(ctrl|alt|shift|meta)Key\s*\)\s*\{?\s*return\b")
 # `!e.altKey &&` rules Alt out. Read as `e.altKey &&`, KiT's Ctrl+Shift+D was
 # minted as Ctrl+Alt+Shift+D.
 _MOD_AND = re.compile(r"(?<![\w$!])(?<!!\s)[\w$]+\.(ctrl|alt|shift|meta)Key\s*\)?\s*&&")
 _MOD_EITHER = re.compile(r"[\w$]+\.(?:ctrl|meta)Key\s*\|\|\s*[\w$]+\.(?:ctrl|meta)Key")
+# Outside a shortcut's own condition the either-test counts in three forms
+# only: a guard that returns without it (braced or not), a local the condition
+# tests by name or a guard returns without, and an `if` whose block encloses
+# the condition (_enclosing_either). Read from anywhere above the condition, an
+# earlier sibling's `(e.ctrlKey || e.metaKey) && e.key === 'k'` leaked into the
+# next shortcut, and `e.altKey && e.key === 'h'` was minted as key.mod-alt-h
+# (the pack's review, 2026-09-30); read from the condition alone, a braced
+# guard, a local in a guard and a nested block minted Ctrl/Cmd+K as plain K
+# (its second review, the same day).
+_MOD_EITHER_GUARD = re.compile(r"!\s*\(\s*" + _MOD_EITHER.pattern
+                               + r"\s*\)\s*\)\s*\{?\s*return\b")
+_MOD_ALIAS = re.compile(r"\b(?:const|let|var)\s+([\w$]+)\s*=\s*\(?\s*" + _MOD_EITHER.pattern)
 # A key read into a local first - `const k = e.key.toLowerCase()` - and then
 # tested by that name. KiT's landing page dispatches every shortcut that way,
 # and not one was derived. Followed only inside the listener that defines it,
@@ -808,14 +839,46 @@ def _branch_block(text, g):
     return (q + o.end(), e) if e > 0 else None
 
 
-def _modifiers(guard_ctx, condition):
+def _enclosing_either(text, lo, start):
+    """True when an `if` between lo and start tests `(e.ctrlKey || e.metaKey)`,
+    or a local holding it, un-negated, and its block is still open at start:
+    `if (e.ctrlKey || e.metaKey) { if (e.key === 'k') ... }` is Ctrl/Cmd+K. A
+    sibling's block has closed before the next shortcut, and `if (!(a || b))
+    { ... }` is the opposite of mod, so neither counts."""
+    aliases = [m.group(1) for m in _MOD_ALIAS.finditer(text, lo, start)]
+    for m in re.compile(r"\bif\s*\(").finditer(text, lo, start):
+        q = _match_brace(text, m.end() - 1, "(", ")")
+        if q < 0 or q >= start:
+            continue                    # the shortcut's own condition, or unreadable
+        cond = text[m.end():q]
+        hit = (_MOD_EITHER.search(cond)
+               and not re.search(r"!\s*\(\s*" + _MOD_EITHER.pattern, cond)) or any(
+            re.search(r"(?<![\w$.!])%s(?![\w$])" % re.escape(a), cond) for a in aliases)
+        o = re.match(r"\s*\{", text[q + 1:q + 40]) if hit else None
+        if o and _match_brace(text, q + o.end()) > start:
+            return True
+    return False
+
+
+def _modifiers(guard_ctx, condition, enclosed=False):
     """Modifiers a shortcut demands: a guard earlier in its handler
-    (`if (!e.altKey) return`) or a conjunction in its own condition
-    (`e.altKey && ...`). `(e.ctrlKey || e.metaKey)` is `mod` - Ctrl on
-    Windows, Cmd on a Mac. Anything subtler is not guessed at."""
+    (`if (!e.altKey) return`, braced or not) or a conjunction in its own
+    condition (`e.altKey && ...`). `(e.ctrlKey || e.metaKey)` is `mod` - Ctrl
+    on Windows, Cmd on a Mac - in the condition, in a guard (`if (!(a || b))
+    return`), in a local the condition tests or a guard returns without
+    (`const mod = a || b`), or in an `if` whose block holds the condition
+    (enclosed, from _enclosing_either); an earlier sibling's condition is not
+    this shortcut's, and its modifiers stay there. Anything subtler is not
+    guessed at."""
     mods = set(m.group(1) for m in _MOD_GUARD.finditer(guard_ctx))
     mods.update(m.group(1) for m in _MOD_AND.finditer(condition))
-    if _MOD_EITHER.search(condition) or _MOD_EITHER.search(guard_ctx):
+    aliases = [m.group(1) for m in _MOD_ALIAS.finditer(guard_ctx)]
+    either = enclosed or _MOD_EITHER.search(condition) or _MOD_EITHER_GUARD.search(
+        guard_ctx) or any(
+        re.search(r"(?<![\w$.])%s(?![\w$])" % re.escape(a), condition)
+        or re.search(r"!\s*%s\s*\)\s*\{?\s*return\b" % re.escape(a), guard_ctx)
+        for a in aliases)
+    if either:
         mods = (mods - {"ctrl", "meta"}) | {"mod"}
     return [x for x in ("mod", "ctrl", "alt", "shift", "meta") if x in mods]
 
@@ -870,7 +933,8 @@ def ex_keyboard(root, files):
             b = max(text.rfind(";", 0, start), text.rfind("{", 0, start),
                     text.rfind("}", 0, start))
             mods = _modifiers(text[scope[0]:start] if scope else "",
-                              text[b + 1:end])
+                              text[b + 1:end],
+                              bool(scope) and _enclosing_either(text, scope[0], start))
             if scope and scope[2] == "element" and set(names) <= {"enter", "space"} \
                     and scope[3] and (_attr_word(scope[3][1].get("role"))
                                       in _ACTIVATABLE_ROLES
@@ -905,40 +969,61 @@ def ex_cli(root, files):
         if not p.endswith(".py"):
             continue
         text = read(p)
-        if "add_argument" not in text and "@click.command" not in text:
+        if "add_argument" not in text and "@click.command" not in text \
+                and "add_parser" not in text:
             continue
         r = rel(root, p)
         claimed.append(r)
-        flags = _py_flags(text)
-        if flags is None:
+        parsed = _py_cli(text)
+        if parsed is None:
             flags = [(text.count("\n", 0, m.start()) + 1, m.group(1)) for m in
                      re.finditer(r"add_argument\(\s*[\"'](--[a-zA-Z0-9-]+)[\"']",
                                  text)]
+            subs = [(text.count("\n", 0, m.start()) + 1, m.group(1)) for m in
+                    re.finditer(r"add_parser\(\s*[\"']([a-zA-Z0-9][\w-]*)[\"']", text)]
+        else:
+            flags, subs = parsed
         for line, flag in flags:
             out.append(("cli." + slug(flag), "cli", "%s:%d" % (r, line),
                         "flag " + flag))
+        # A subcommand is a command in its own right, named by its file and
+        # itself: depgraph.py's `explain` is cmd.depgraph-explain. This skill's
+        # own map carried thirteen by hand while --check said every surface file
+        # was parsed (the pack's review, 2026-09-30).
+        stem = slug(os.path.splitext(os.path.basename(p))[0])
+        for line, name in subs:
+            out.append(("cmd.%s-%s" % (stem, slug(name)), "cli", "%s:%d" % (r, line),
+                        "subcommand " + name))
     return out, claimed
 
 
-def _py_flags(text):
-    """[(line, --flag)] for argparse flags in real code, from the syntax tree -
-    this skill's own map carried `cli.verbose` out of a fixture string in its
-    test harness. None when the file will not parse, and the pattern reads it."""
+def _py_cli(text):
+    """([(line, --flag)], [(line, subcommand)]) for argparse in real code, from
+    the syntax tree - this skill's own map carried `cli.verbose` out of a
+    fixture string in its test harness. A subcommand is the first string of an
+    `add_parser` call on whatever `add_subparsers` returned, a Parser subclass
+    included. None when the file will not parse, and the pattern reads it."""
     import ast
     try:
         tree = ast.parse(text)
     except (SyntaxError, ValueError):
         return None
-    found = []
+    flags, subs = [], []
     for node in ast.walk(tree):
-        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "add_argument"):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        if node.func.attr == "add_argument":
             for a in node.args:
                 if (isinstance(a, ast.Constant) and isinstance(a.value, str)
                         and re.match(r"^--[a-zA-Z0-9-]+$", a.value)):
-                    found.append((node.lineno, a.value))
+                    flags.append((node.lineno, a.value))
                     break
-    return sorted(found)
+        elif node.func.attr == "add_parser" and node.args:
+            a = node.args[0]
+            if (isinstance(a, ast.Constant) and isinstance(a.value, str)
+                    and re.match(r"^[a-zA-Z0-9][\w-]*$", a.value)):
+                subs.append((node.lineno, a.value))
+    return sorted(flags), sorted(subs)
 
 
 def ex_pkg_scripts(root, files):
@@ -1240,7 +1325,7 @@ ROUTE_EXTRACTORS = (ex_python_routes, ex_express)
 # is measured, not guessed: a client file that calls its path is the evidence,
 # and the row says which file and line.
 USER_PREFIXES = ("route.", "control.", "region.", "key.")
-DEV_PREFIXES = ("cli.", "script.", "env.", "deploy.", "ci.")
+DEV_PREFIXES = ("cli.", "cmd.", "script.", "env.", "deploy.", "ci.")
 CLIENT_EXT = (".jsx", ".tsx", ".js", ".ts", ".mjs", ".vue", ".svelte", ".astro",
               ".html", ".hbs", ".ejs")
 _TEST_PATH = re.compile(r"(?:^|/)(?:tests?|__tests__|spec)/|\.(?:test|spec)\.\w+$")
@@ -1602,16 +1687,17 @@ def cmd_write(root, mp):
     if not os.path.exists(mp):
         print("no %s - run --init first" % MAP_NAME)
         return 1
-    text = read(mp)
+    text = read_keep(mp)
     if D_BEGIN not in text or D_END not in text:
         print("map is missing the %s / %s markers - refusing to guess where the "
               "generated half belongs" % (D_BEGIN, D_END))
         return 1
     feats, unparsed, nfiles, generated, unaddressed = derive(root)
     stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    eol = _eol(text)
     new = (text[:text.find(D_BEGIN) + len(D_BEGIN)]
-           + "\n" + derived_block(feats, unparsed, nfiles, stamp, generated,
-                                  unaddressed)
+           + eol + derived_block(feats, unparsed, nfiles, stamp, generated,
+                                 unaddressed).replace("\n", eol)
            + text[text.find(D_END):])
     write(mp, new)
     print("wrote DERIVED block: %d capability/capabilities, %d unparsed file(s), "
@@ -1626,7 +1712,7 @@ def cmd_write(root, mp):
 # route renamed inside a file leaves the file. Hand-mapped features take their
 # own prefixes (ui., setting.) and are never judged by this.
 DERIVED_PREFIXES = ("endpoint.", "route.", "control.", "region.", "key.", "cli.",
-                    "script.", "env.", "deploy.", "ci.")
+                    "cmd.", "script.", "env.", "deploy.", "ci.")
 KNOWN_RENAMES = {"endpoint.unnamed": "endpoint.root", "route.unnamed": "route.root"}
 
 
@@ -1721,13 +1807,50 @@ def _translate(hunks, lo, hi):
 # before git blame: nine ranges re-aimed at one commit and left uncommitted were
 # read in today's lines by blame alone, one short each, under a PASS, and four
 # pointers in prose or in an `entry:` were never read at all (a static site,
-# 2026-09-30). A host:port or a URL is not pointer-shaped; a bare file name that
-# resolves to nothing is, and --check names it.
+# 2026-09-30). A URL, a bare host or an address with a port is not
+# pointer-shaped; a bare file name that resolves to nothing is, and --check
+# names it.
 POINTER_FIELDS = ("code", "entry")
 _POINTER = re.compile(
     r"(?<![\w./@:-])([\w.-]+(?:/[\w.-]+)*):(\d+)(?:(\s*-\s*)(\d+))?(`?)"
     r"(?:\s*@\s*([0-9a-fA-F]{7,40})\b)?(?![\w/-])")
-_PATHLIKE = re.compile(r"/|\.[A-Za-z]\w*$")
+# A host with a port (app.example.com:8443) is not a file with a line
+# (Layout.astro:138), and neither is it a file whose extension happens to be a
+# TLD (Dockerfile.test:3, .env.local:2). A host has a host's shape: lower-case
+# labels, a port of two to five digits, and a last label that is a TLD - behind
+# one dot only when that TLD is not also a common file extension or word
+# (_HOST_TLDS), behind two dots when it is (_HOST_LABELS). A file's extension is
+# never on either list (.py, .md, .sh, .rs, .in, .so stay file-shaped). The
+# pack's review read app.example.com:8443 as a missing file; its second review
+# found the allow-list that fixed it hid Dockerfile.test:3, .env.local:2,
+# deploy.run:4 and index.page:9 (2026-09-30).
+_HOST_TLDS = frozenset(
+    "com net org io ai co me us uk eu de fr ca au jp cn ru br it nl se ch es xyz biz "
+    "tv gg ly edu gov mil int".split())
+_HOST_LABELS = _HOST_TLDS | frozenset(
+    "dev app site page cloud local internal localhost test example invalid home lan "
+    "tech info link live run host online store shop blog email mail".split())
+
+
+def _host_shaped(token, number):
+    """app.example.com with 8443, example.com with 443: a dotted lower-case
+    name with a TLD for its last label, and a port-sized number."""
+    labels = token.split(".")
+    if not 2 <= len(number) <= 5 or len(labels) < 2 or not all(
+            re.match(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", x) for x in labels):
+        return False
+    return labels[-1] in (_HOST_LABELS if len(labels) > 2 else _HOST_TLDS)
+
+
+def _pathlike(token, number):
+    """Shaped as no host is: a folder separator, or an extension on a name
+    that is not host-shaped (_host_shaped). An IPv4 address (127.0.0.1) and a
+    bare name (localhost) have no extension."""
+    if "/" in token:
+        return True
+    return bool(re.search(r"\.[A-Za-z]\w*$", token)) and not _host_shaped(token, number)
+
+
 Ptr = collections.namedtuple(
     "Ptr", "line fid field path lo hi dash tick stamp start end blame exists")
 Move = collections.namedtuple("Move", "ptr base via now reason")
@@ -1737,8 +1860,10 @@ def _scan_pointers(root, text):
     """Every pointer in the authored half's `code:` and `entry:` fields, in
     map order, blame not yet read (None). A field runs to the next `- key:` or
     a blank line, as parse_map reads it, so a pointer on a wrapped line counts.
-    A token that is not pointer-shaped (localhost:3000) is left out; one that
-    is and names no file is kept with exists=False, for --check to name."""
+    A token is a pointer when it names a file under the project, or is shaped
+    as no host is (_pathlike); localhost:3000, 127.0.0.1:8080 and
+    app.example.com:8443 are left out, and a pointer-shaped token that names no
+    file is kept with exists=False, for --check to name."""
     found, fid, field, inside = [], None, None, False
     for i, ln in enumerate(text.split("\n")):
         if A_BEGIN in ln:
@@ -1761,7 +1886,7 @@ def _scan_pointers(root, text):
             continue
         for p in _POINTER.finditer(ln):
             exists = os.path.exists(os.path.join(root, p.group(1)))
-            if not exists and not _PATHLIKE.search(p.group(1)):
+            if not exists and not _pathlike(p.group(1), p.group(2)):
                 continue
             lo = int(p.group(2))
             hi = int(p.group(4)) if p.group(4) else lo
@@ -1821,7 +1946,7 @@ def _moved_pointers(root, mp, text):
     change - so --reaim can carry it. `declined`: a range that moved with a
     change inside it no proof covers, with git's best reading of where it sits
     now and the reason it stays; unsaid, that drift hid behind the stale proof
-    (a static site's ui.vista, 2026-09-30). `dangling`: a stamp naming no
+    (a section of a static site, 2026-09-30). `dangling`: a stamp naming no
     commit here, read by blame instead. `unplaced`: not committed and
     unstamped, read in today's lines - right when written, wrong once HEAD
     moves past commits touching the file, which --check says."""
@@ -1875,7 +2000,7 @@ def _moved_pointers(root, mp, text):
             continue
         # A one-line pointer prints only its start: carried to a region that
         # starts on its own line, it would be "moved" to the text it already
-        # holds, forever - blame keeps naming the old commit (KiT, K92.1).
+        # holds, forever - blame keeps naming the old commit (KiT, 2026-09-30).
         if _ptr_text(ptr, now) != _ptr_text(ptr):
             moved.append(Move(ptr, base, via, now, ""))
     return moved, declined, dangling, unplaced
@@ -1895,7 +2020,10 @@ def _stamp(root, path, known):
 
 def _rewrite(text, edits):
     """The map with each (line, start, end, replacement) applied - right to
-    left within a line, so earlier spans keep their offsets; a CR is kept."""
+    left within a line, so earlier spans keep their offsets. `text` is the map
+    as read_keep read it, endings and all: a line's CR is set aside for the
+    edit and put back, so a CRLF map comes out CRLF and the diff is the edited
+    lines alone."""
     lines, by_line = text.split("\n"), {}
     for i, s, e, rep in edits:
         by_line.setdefault(i, []).append((s, e, rep))
@@ -1912,6 +2040,38 @@ def _say_dangling(dangling):
     for ptr in dangling:
         print("NOTE %s: %s @ %s names no commit this repository has - read by "
               "blame instead" % (ptr.fid, _ptr_text(ptr), ptr.stamp))
+
+
+def _ends(root, mv, shown):
+    """What a declined range's ends hold, read by text: the line at each end
+    in the commit its numbers are in, and whether that text sits where the
+    numbers put it now. A number alone says nothing about what it names -
+    a job of KiT's (2026-09-30) was authored 33 lines into its function, and the
+    reading that followed, faithful to those numbers, could not be told from a
+    wrong one. An end whose line changed sits inside the hunk, and the number
+    printed for it is that change's edge, not a line found by its text."""
+    key = (mv.base, mv.ptr.path)
+    if key not in shown:
+        ok, out = git(root, "show", "%s:%s" % (mv.base, mv.ptr.path))
+        shown[key] = out.split("\n") if ok else None
+    then = shown[key]
+    now = read(os.path.join(root, mv.ptr.path)).split("\n")
+
+    def at(lines, n):
+        return lines[n - 1].strip() if lines and 0 < n <= len(lines) else None
+    said = []
+    ends = [("first", mv.ptr.lo, mv.now[0]), ("last", mv.ptr.hi, mv.now[1])]
+    for label, a, b in (ends if mv.ptr.lo != mv.ptr.hi else ends[:1]):
+        t = at(then, a)
+        if t is None:
+            continue
+        t = t[:40] + ("..." if len(t) > 40 else "")
+        if at(now, b) == at(then, a):
+            said.append('its %s line, "%s", is at %d now' % (label, t, b))
+        else:
+            said.append('its %s line, "%s", changed - %d is the edge of that change, '
+                        'not a line read by its text' % (label, t, b))
+    return said
 
 
 def _lines(start, n, empty):
@@ -1947,17 +2107,17 @@ def cmd_reaim(root, mp):
     where no change fell inside the range that its proof does not cover: that
     is a fact git measures, not a judgment, so it is the one edit this script
     makes to the authored half. A range it leaves is named, with where git
-    reads it now and why it stays."""
+    reads it now, what its first and last lines hold, and why it stays."""
     if not os.path.exists(mp):
         print("no %s - run --init first" % MAP_NAME)
         return 1
-    text = read(mp)
+    text = read_keep(mp)
     moved, declined, dangling, _ = _moved_pointers(root, mp, text)
     _say_dangling(dangling)
     if not moved and not declined:
         print("no code range has moved under its pointer")
         return 0
-    edits, known, unstamped = [], {}, []
+    edits, known, unstamped, shown = [], {}, [], {}
     for mv in moved:
         stamp = _stamp(root, mv.ptr.path, known)
         if not stamp and mv.ptr.path not in unstamped:
@@ -1969,8 +2129,9 @@ def cmd_reaim(root, mp):
     if moved:
         write(mp, _rewrite(text, edits))
     for mv in declined:
-        print("  %s not moved: %s; re-drive it, then --reaim"
-              % (_said(mv, mv.now), mv.reason))
+        print("  %s not moved: %s%s; re-drive it, then --reaim"
+              % (_said(mv, mv.now), mv.reason,
+                 "".join("; " + s for s in _ends(root, mv, shown))))
     for path in unstamped:
         print("NOTE %s has changes not in HEAD, so the range(s) moved in it carry "
               "no `@ commit` and are read in today's lines - commit it with the "
@@ -2038,7 +2199,7 @@ def cmd_check(root, mp):
         loosen_unmapped = (len(new), unmapped_ceiling)
 
     # Every pointer, not the first path of the `code:` field alone: a bare
-    # `BaseLayout.astro:138` in an entry named no file and passed for days
+    # `Layout.astro:138` in an entry named no file and passed for days
     # (a static site, 2026-09-30).
     ptrs = _scan_pointers(root, text)
     gone = []
@@ -2083,7 +2244,7 @@ def cmd_check(root, mp):
         return "\n".join(x.rstrip() for x in block.strip().split("\n"))
     stored = _between(text.replace("\r\n", "\n"), D_BEGIN, D_END)
     fresh = derived_block(feats, unparsed, nfiles, "-", generated, unaddressed)
-    # Masked above so it cannot fail, but still a claim the map makes: mk1made-
+    # Masked above so it cannot fail, but still a claim the map makes: a static
     # site's said 77 files over 93 and nothing said so.
     said = re.search(r"`featuremap\.py --write` at [^\n]*? from (\d+) file", stored)
     if said and int(said.group(1)) != nfiles:
@@ -2135,7 +2296,7 @@ def cmd_check(root, mp):
     # of the diff it is held against. Where neither can say, both sides are
     # tried. Each `code:` pointer is a region of its own file - the field's
     # last numbers held against its first path put one file's range on
-    # another's diff (a static site's region.primary, 2026-09-30).
+    # another's diff (a section of a static site, 2026-09-30).
     placed = (_pointers(root, mp, text) if ok_git else None) or []
     moved, declined, dangling, unplaced = _moved_pointers(root, mp, text) \
         if ok_git else ([], [], [], [])
@@ -2198,7 +2359,7 @@ def cmd_check(root, mp):
                         % (fid, sha.group(1), path, was, sha.group(1), now, where))
                 # The drift beside the stale proof, never instead of it: a
                 # range that moved with a change inside stayed unsaid while its
-                # proof was stale (a static site's ui.vista, 2026-09-30).
+                # proof was stale (a section of a static site, 2026-09-30).
                 mv = left.get((p.line, p.start)) if p is not None else None
                 if mv:
                     line += ("; and it has moved: %s (written @ %s) -> %s, not "
@@ -2410,7 +2571,7 @@ def _new_proof(d, stamp, commit, body):
 
 
 def _say_verified_at(root, fid, commit):
-    """The map line a passing capture asks for. A work label (K82.1) where the
+    """The map line a passing capture asks for. A work label (a ticket id) where the
     commit belongs is read by day and by whole file: any change to the file on
     a later day stales it, one later that day is missed (KiT, 2026-09-30)."""
     want = "%s @ %s" % (datetime.date.today(), commit)
@@ -2517,7 +2678,9 @@ def cmd_ratchet(root, mp):
     if not os.path.exists(mp):
         print("no %s - run --init first" % MAP_NAME)
         return 1
-    text = read(mp)
+    # Read with its endings and edited in place: the ceiling lines' own text
+    # changes, and nothing else - not a CRLF map's other lines (1.4.6).
+    text = read_keep(mp)
     _, all_authored = parse_map(text)
     patterns = parse_patterns(all_authored)
     feats, _, _, generated, _ = derive(root)
@@ -2528,7 +2691,7 @@ def cmd_ratchet(root, mp):
     # entry permanently lowers the bar rather than just buying slack.
     authored_feats = set(k for k in all_authored if not k.startswith("pattern:"))
     n_unmapped = len(set(feats) - authored_feats)
-    m = re.search(r"^-\s*unmapped_ceiling\s*:\s*(\d+)\s*$", text, re.M)
+    m = re.search(r"^-[ \t]*unmapped_ceiling[ \t]*:[ \t]*(\d+)(?=[ \t]*\r?$)", text, re.M)
     if m:
         cur = int(m.group(1))
         if n_unmapped > cur:
@@ -2569,7 +2732,7 @@ def cmd_ratchet(root, mp):
             nxt = re.search(r"^###\s+", text[seg_start:], re.M)
             seg_end = seg_start + (nxt.start() if nxt else len(text) - seg_start)
             seg = text[seg_start:seg_end]
-            new_seg, cnt = re.subn(r"^-\s*ceiling\s*:.*$",
+            new_seg, cnt = re.subn(r"^-[ \t]*ceiling[ \t]*:[^\r\n]*",
                                    "- ceiling: %d" % n, seg, count=1, flags=re.M)
             if not cnt:
                 blocked.append((pid, "has no `- ceiling:` line to lower"))
@@ -2599,8 +2762,12 @@ def cmd_init(root, mp):
         print("template missing at %s" % tpl)
         return 1
     name = os.path.basename(os.path.abspath(root))
+    # The clock's own time and its offset from UTC, never a zone name typed in:
+    # the template said "ET" on every machine (the pack's review, 2026-09-30).
+    now = datetime.datetime.now().astimezone()
+    off = now.strftime("%z")
     text = text.replace("{{PROJECT}}", name).replace(
-        "{{CREATED}}", datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+        "{{CREATED}}", "%s UTC%s:%s" % (now.strftime("%Y-%m-%d %H:%M"), off[:3], off[3:]))
     write(mp, text)
     for sub in ("proof", "artifacts"):
         d = os.path.join(root, STORE, sub)
@@ -3002,7 +3169,7 @@ def cmd_live(root, mp, args):
             print("  %s as last fetched here, %s - fetch first for a current "
                   "answer" % (ref, when))
         # A static site serves public/licenses/X.txt at /licenses/X.txt (Astro,
-        # Vite, Next; mk1made.us). `root` names that folder; undeclared, the
+        # Vite, Next). `root` names that folder; undeclared, the
         # usual ones are tried, and a match is by content, so it cannot mislead.
         served = f.get("root", "").strip().strip("`").strip("/")
         cands = ([served + "/" + fp] if served
@@ -3244,33 +3411,63 @@ def main(argv=None):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--project", default=".")
-    ap.add_argument("--init", action="store_true")
-    ap.add_argument("--check", action="store_true")
-    ap.add_argument("--write", action="store_true")
-    ap.add_argument("--reaim", action="store_true")
-    ap.add_argument("--record", action="store_true")
-    ap.add_argument("--ratchet", action="store_true")
-    ap.add_argument("--feature")
-    ap.add_argument("--grade")
-    ap.add_argument("--result", choices=("pass", "fail", "blocked"))
-    ap.add_argument("--how")
-    ap.add_argument("--observable")
-    ap.add_argument("--bound")
-    ap.add_argument("--conditions")
-    ap.add_argument("--metric", action="append")
-    ap.add_argument("--artifact", action="append")
-    ap.add_argument("--list", action="store_true")
-    ap.add_argument("--ref")
-    ap.add_argument("--compare", nargs="+", metavar="REF")
-    ap.add_argument("--face", choices=("user", "dev", "unclassified"))
-    ap.add_argument("--json", action="store_true")
-    ap.add_argument("--live", action="store_true")
-    ap.add_argument("--url")
-    ap.add_argument("--fingerprint")
-    ap.add_argument("--probe", action="append")
-    ap.add_argument("--branch")
-    ap.add_argument("--judge", action="store_true")
+    # Every flag says what it does and which command reads it: --record and
+    # --live were listed in SKILL.md while --help printed the flags they need
+    # bare (the pack's second review, 2026-09-30; selftest case 68).
+    ap.add_argument("--project", default=".",
+                    help="the project folder (default: the current one)")
+    ap.add_argument("--init", action="store_true",
+                    help="write a new FEATURE-MAP.md from the template; never overwrites one")
+    ap.add_argument("--check", action="store_true",
+                    help="drift, stale proof, unparsed surfaces and patterns; non-zero on any")
+    ap.add_argument("--write", action="store_true",
+                    help="rewrite the derived half only")
+    ap.add_argument("--reaim", action="store_true",
+                    help="move each authored range whose lines moved, stamped @ <commit>")
+    ap.add_argument("--record", action="store_true",
+                    help="append a proof capture: needs --feature, --grade and --result")
+    ap.add_argument("--ratchet", action="store_true",
+                    help="lower each ceiling to what is present; never raises one")
+    ap.add_argument("--feature",
+                    help="the capability id, for --record (required) and --judge (one only)")
+    ap.add_argument("--grade",
+                    help="--record: DRIVEN, TESTED, ASSERTED or UNKNOWN")
+    ap.add_argument("--result", choices=("pass", "fail", "blocked"),
+                    help="--record: what the run showed")
+    ap.add_argument("--how",
+                    help="--record: what you did to reach the feature")
+    ap.add_argument("--observable",
+                    help="--record: what you read back (required for DRIVEN and TESTED)")
+    ap.add_argument("--bound",
+                    help="--record: what the run covered and what it did not")
+    ap.add_argument("--conditions",
+                    help="--record: where it ran (machine, browser, data, versions)")
+    ap.add_argument("--metric", action="append",
+                    help="--record: a name=value reading, compared with the last capture; repeatable")
+    ap.add_argument("--artifact", action="append",
+                    help="--record: a file the run left (screenshot, log); repeatable")
+    ap.add_argument("--list", action="store_true",
+                    help="every capability on both faces, from the code")
+    ap.add_argument("--ref",
+                    help="--list: read this commit or branch instead of the working tree")
+    ap.add_argument("--compare", nargs="+", metavar="REF",
+                    help="what one ref has that the other lacks; one ref: against the working tree")
+    ap.add_argument("--face", choices=("user", "dev", "unclassified"),
+                    help="--list: one face only")
+    ap.add_argument("--json", action="store_true",
+                    help="--list and --compare: print JSON")
+    ap.add_argument("--live", action="store_true",
+                    help="what production serves: the map's url: entries, or --url")
+    ap.add_argument("--url",
+                    help="--live: production's scheme and host, no path")
+    ap.add_argument("--fingerprint",
+                    help="--live: a path production serves byte for byte from the repository")
+    ap.add_argument("--probe", action="append",
+                    help="--live: a safe GET path to read back; repeatable")
+    ap.add_argument("--branch",
+                    help="--live: the branch production deploys from")
+    ap.add_argument("--judge", action="store_true",
+                    help="ask Jev whether each observable shows its intent (levjev)")
     a = ap.parse_args(argv)
 
     root = os.path.abspath(a.project)

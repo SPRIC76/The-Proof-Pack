@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """jev.py - the one way to ask Jev (TypeSafe's System One model) a question.
 
-Version 1.0 | Deps: Python 3 standard library only | Parent: levjev skill 1.0.3 |
+Version 1.0 | Deps: Python 3 standard library only | Parent: levjev skill 1.0.5 |
 Path: scripts | Filename: jev.py | Created: 2026-09-23
 
 WHAT IT ENFORCES, so that nobody has to remember it (a constraint that has to be
@@ -199,7 +199,7 @@ def ask(state, questions, model=PIN, timeout=30, retries=3):
     if too_big:
         raise Refused("request too large: " + too_big)
     url = _endpoint()
-    key = _key()[0]
+    key, where = _key()
     if not key:
         raise Unavailable("%s is not set on this machine - not in the environment, "
                           "not in ~/.agents/.env - so nothing was asked" % KEY_ENV)
@@ -233,7 +233,10 @@ def ask(state, questions, model=PIN, timeout=30, retries=3):
             if e.code == 422:
                 raise Refused("the service rejected the request: " + detail)
             if e.code in (401, 403):
-                raise Unavailable("the key in %s was rejected (%d)" % (KEY_ENV, e.code))
+                # where it came from, so the right one gets fixed; never what it is
+                raise Unavailable("the %s read from %s was rejected by the service "
+                                  "(%d) - check the value there; nothing was judged"
+                                  % (KEY_ENV, where, e.code))
             raise Unavailable("the service answered %d %s" % (e.code, detail[:80]))
         except (urllib.error.URLError, OSError, ValueError) as e:
             raise Unavailable("could not reach the service: %s"
@@ -249,9 +252,13 @@ def main(argv=None):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--ping", action="store_true")
-    ap.add_argument("--model", default=PIN)
-    ap.add_argument("--check-question")
+    ap.add_argument("--ping", action="store_true",
+                    help="ask one greeting question; prints the model, time and where "
+                         "the key came from (one request)")
+    ap.add_argument("--model", default=PIN,
+                    help="the model to ask; only %s is accepted" % PIN)
+    ap.add_argument("--check-question", metavar="FILE",
+                    help="lint a JSON question map offline; nothing is sent")
     a = ap.parse_args(argv)
     if a.check_question:
         try:

@@ -3,11 +3,8 @@
 # mutate: fixture
 """selftest.py - the cases jev.py must not regress on.
 
-Version 1.0 | Deps: Python 3 standard library only | Parent: levjev skill 1.0.3 (formerly jev) |
-Path: scripts | Filename: selftest.py | Created: 2026-09-24 07:58 ET |
-Updated: 2026-09-30 04:22 ET — the header names levjev 1.0.2 (the pack's review); the
-file carries Verafox's mutate: fixture pragma, so a Mutate read lists its fixture
-strings apart instead of flagging them
+Version 1.0 | Deps: Python 3 standard library only | Parent: levjev skill 1.0.5 (formerly jev) |
+Path: scripts | Filename: selftest.py | Created: 2026-09-24
 
 Run:  python scripts/selftest.py       (exit 0 = all green)
 
@@ -25,6 +22,7 @@ first proved by breaking each on purpose; Verafox keeps the cases about its own
 import http.server
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -175,6 +173,19 @@ def main():
               "- and never printed", rc == 0 and posts[-1][0] ==
               "Bearer file-key-not-real" and "file-key-not-real" not in out
               and "key from ~/.agents/.env" in out, out)
+        # The pack's review (2026-09-30): a 401 said "the key in TYPESAFE_API_KEY
+        # was rejected" whichever place the key had come from. It names the
+        # place now - the environment, or the file by its path - never the key.
+        reply["fail"] = [403]
+        rc, out = cli("--ping", env=nokey)
+        check("a rejected key from the file says so by the file's path, never the key",
+              rc == 2 and "UNAVAILABLE" in out and "rejected" in out
+              and "~/.agents/.env" in out and "file-key-not-real" not in out, out)
+        reply["fail"] = [401]
+        rc, out = cli("--ping", env=fake)
+        check("...and one from the environment says the environment",
+              rc == 2 and "UNAVAILABLE" in out and "rejected" in out
+              and "the environment" in out and "test-key-not-real" not in out, out)
         n = len(posts)
         put(os.path.join(home, ".agents", ".env"), "TYPESAFE_API_KEY=\"PASTE_KEY_HERE\"\n")
         rc, out = cli("--ping", env=nokey)
@@ -230,6 +241,84 @@ def main():
         out = api("word " * 40000, {"q": qs["refund"]}, fake)
         check("an obviously oversize request is refused before anything is sent",
               "REFUSED request too large" in out and len(posts) == n, out[:300])
+
+        # ------------------------------------------------ 5 what SKILL.md shows
+        # The pack's review (2026-09-30): SKILL.md showed a question as
+        # {"message": ..., "question": ...} - a shape lint() refuses (no type, no
+        # instructions). Every JSON object the skill's own text shows as a
+        # question map must pass --check-question, offline, or the text teaches
+        # a request the client will not send.
+        print("\n5. every question shape SKILL.md shows is one --check-question accepts")
+        with open(os.path.join(HERE, "..", "SKILL.md"), encoding="utf-8") as fh:
+            skill_text = fh.read()
+        shapes = []
+        pos = 0
+        while True:
+            i = skill_text.find('{"', pos)
+            if i < 0:
+                break
+            depth, j, in_str = 0, i, False
+            while j < len(skill_text):
+                ch = skill_text[j]
+                if in_str:
+                    if ch == "\\":
+                        j += 1
+                    elif ch == '"':
+                        in_str = False
+                elif ch == '"':
+                    in_str = True
+                elif ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            try:
+                doc = json.loads(skill_text[i:j + 1])
+            except ValueError:
+                doc = None
+            if isinstance(doc, dict):
+                shapes.append((skill_text.count("\n", 0, i) + 1, doc))
+            pos = j + 1 if j > i else i + 2
+        refused = []
+        for line, doc in shapes:
+            sf = os.path.join(tmp, "shape.json")
+            put(sf, json.dumps(doc))
+            rc, out = cli("--check-question", sf, env=nokey)
+            if rc != 0:
+                refused.append("SKILL.md:%d %s" % (line, out.strip()[:160]))
+        check("SKILL.md shows at least one question map, and --check-question accepts "
+              "every one it shows", shapes and not refused,
+              "; ".join(refused) or "no JSON object found in SKILL.md")
+        check("...with a noul, a choice and a score among them",
+              {q.get("type") for _, d in shapes for q in d.values()
+               if isinstance(q, dict)} >= {"noul", "choice", "score"},
+              " | ".join(" ".join(sorted(d)) for _, d in shapes))
+        # ------------------------------------------------ 6 --help says what each flag does
+        # The pack's second review (2026-09-30): jev.py --help printed --ping,
+        # --model and --check-question bare.
+        print("\n6. jev.py --help says what every flag does")
+
+        def bare_flags(help_text):
+            """Flags --help lists with nothing beside or below them."""
+            lines, bare = help_text.split("\n"), []
+            for i, ln in enumerate(lines):
+                m = re.match(r"^  (--?[\w-]+)", ln)
+                if not m or m.group(1) == "-h":
+                    continue
+                same = re.search(r"\S\s{2,}\S", ln[2:])
+                below = i + 1 < len(lines) and re.match(r"^ {10,}\S", lines[i + 1])
+                if not same and not below:
+                    bare.append(m.group(1))
+            return bare
+
+        rc, out = cli("--help", env=nokey)
+        bare6 = bare_flags(out)
+        check("RED: --help gives --ping, --model and --check-question a line of help",
+              rc == 0 and "--check-question" in out and not bare6,
+              " ".join(bare6) or out[-800:])
+
     finally:
         srv.shutdown()
         shutil.rmtree(tmp, ignore_errors=True)

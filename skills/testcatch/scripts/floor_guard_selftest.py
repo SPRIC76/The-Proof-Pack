@@ -675,7 +675,7 @@ def main():
 
         ledger(k, [{"kind": "test-removed", "file": "tests/test_calc.py",
                     "what": "test_sub", "verdict": "intended",
-                    "why": "sub() left with the feature in K80"},
+                    "why": "sub() left with the feature in ticket 80"},
                    {"kind": "assertions-dropped", "file": "tests/test_calc.py",
                     "what": "4 -> 3", "verdict": "intended",
                     "why": "the one assertion of test_sub"}])
@@ -683,7 +683,7 @@ def main():
         check("GREEN: a drop named in the ledger with a verdict and a reason passes",
               rc == 0 and "RESULT: PASS" in out, out)
         check("...and is printed as grandfathered, with its reason, not hidden",
-              "grandfathered" in out and "K80" in out and "test_sub" in out, out)
+              "grandfathered" in out and "ticket 80" in out and "test_sub" in out, out)
         check("...and the RESULT line counts it",
               "2 grandfathered" in out, out)
 
@@ -704,7 +704,7 @@ def main():
               rc == 1 and "whatever" in out and "not one of" in out, out)
 
         ledger(k, [{"kind": "test-removed", "file": "tests/test_calc.py",
-                    "what": "test_sub", "verdict": "intended", "why": "K80"},
+                    "what": "test_sub", "verdict": "intended", "why": "ticket 80"},
                    {"kind": "assertions-dropped", "file": "tests/test_calc.py",
                     "what": "4 -> 3", "verdict": "intended", "why": "the one"},
                    {"kind": "test-removed", "file": "tests/test_calc.py",
@@ -714,7 +714,7 @@ def main():
               rc == 1 and "test_nothing" in out and "delete" in out, out)
 
         ledger(k, [{"kind": "test-removed", "file": "tests/test_calc.py",
-                    "what": "test_sub", "verdict": "intended", "why": "K80"},
+                    "what": "test_sub", "verdict": "intended", "why": "ticket 80"},
                    {"kind": "assertions-dropped", "file": "tests/test_calc.py",
                     "what": "4 -> 3", "verdict": "intended", "why": "the one"}],
                ceiling=1)
@@ -733,7 +733,7 @@ def main():
             "from src.calc import add, sub\n\n\n"
             "def test_mul():\n    assert add(2, 2) == 4\n")
         ledger(k, [{"kind": "test-removed", "file": "tests/test_calc.py",
-                    "what": "test_sub", "verdict": "intended", "why": "K80"},
+                    "what": "test_sub", "verdict": "intended", "why": "ticket 80"},
                    {"kind": "assertions-dropped", "file": "tests/test_calc.py",
                     "what": "4 -> 1", "verdict": "intended", "why": "with them"}])
         rc, out = run(k, "--base", "HEAD")
@@ -774,10 +774,44 @@ def main():
         rc, out = run(q, "--base", "HEAD")
         check("RED: the same entry twice is a ledger problem",
               rc == 1 and "twice" in out, out)
-        ledger(q, [gone], ceiling="1")
+        # The pack's second review (2026-09-30): the docs promise exit 2 for a key
+        # of the wrong type, but a ceiling in words, true or -1 was a ledger
+        # problem, exit 1. It is a bad ledger now, like the other keys.
+        # (break: ceiling checked only where it is applied)
+        for bad in ("1", True, -1, 1.5):
+            put(q, ".floor-guard.json", json.dumps({"items": [gone], "ceiling": bad}))
+            rc, out = run(q, "--base", "HEAD")
+            check("RED: a ceiling of %s is not a whole number: exit 2, named" % json.dumps(bad),
+                  rc == 2 and "RESULT: ERROR" in out and "ceiling" in out
+                  and "whole number" in out, out)
+        put(q, ".floor-guard.json", json.dumps({"about": "why this ledger exists",
+                                                "items": [gone], "ceiling": 1}))
         rc, out = run(q, "--base", "HEAD")
-        check("RED: a ceiling that is not a whole number is a ledger problem",
-              rc == 1 and "ceiling" in out and "whole number" in out, out)
+        check("GREEN: about as text and a whole-number ceiling pass",
+              rc == 0 and "RESULT: PASS" in out, out)
+        # The pack's review (2026-09-30): {"drops": [...]} - a ledger whose top
+        # level has a key the guard does not take - passed as an empty ledger,
+        # and the drop it meant to grandfather failed as new. SKILL.md says a bad
+        # ledger is exit 2; a key it does not take, or one of the wrong type, is
+        # a bad ledger. (break: unknown keys read as an empty items list)
+        put(q, ".floor-guard.json", json.dumps({"drops": [gone]}))
+        rc, out = run(q, "--base", "HEAD")
+        check("RED: a ledger whose top level has a key the guard does not take exits 2 "
+              "and names it",
+              rc == 2 and "RESULT: ERROR" in out and "drops" in out
+              and "RESULT: PASS" not in out and "RESULT: FAIL" not in out, out)
+        put(q, ".floor-guard.json", json.dumps({"items": [gone], "ignore": "vendor/*"}))
+        rc, out = run(q, "--base", "HEAD")
+        check("RED: a known key of the wrong type (ignore as a string) exits 2 and "
+              "names it", rc == 2 and "RESULT: ERROR" in out and "ignore" in out, out)
+        put(q, ".floor-guard.json", json.dumps({"items": [gone], "verdicts": ["intended"]}))
+        rc, out = run(q, "--base", "HEAD")
+        check("RED: verdicts that are not an object exit 2 and are named",
+              rc == 2 and "RESULT: ERROR" in out and "verdicts" in out, out)
+        ledger(q, [gone])
+        rc, out = run(q, "--base", "HEAD")
+        check("GREEN: the documented keys, well typed, still pass",
+              rc == 0 and "RESULT: PASS" in out, out)
 
         # ------------------------------------------------ 11 untracked, and the last line
         print("\n11. untracked files are in the change too"

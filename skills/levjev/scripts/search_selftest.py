@@ -3,7 +3,7 @@
 # mutate: fixture
 """search_selftest.py - the cases search.py must not regress on.
 
-Version 1.0 | Deps: Python 3 standard library only | Parent: levjev skill 1.0.3 (search.py) |
+Version 1.0 | Deps: Python 3 standard library only | Parent: levjev skill 1.0.5 (search.py) |
 Path: scripts | Filename: search_selftest.py | Created: 2026-09-29 10:48 ET
 
 Run:  python -B scripts/search_selftest.py       (exit 0 = all green)
@@ -333,6 +333,13 @@ def main():
               rc == 0 and "--exclude '*.md'" in out, out)
         rc, out = run(Q, repo, "--no-cache")
         check("...and a top led by code says nothing of the kind", rc == 0 and "--exclude '*.md'" not in out, out)
+        # --top and --excerpt-lines are documented since 1.0.4 (the pack's review):
+        # each changes only what is printed
+        rc, out = run(Q, repo, "--no-cache", "--top", "1", "--excerpt-lines", "1")
+        check("--top 1 shows one result and says how many judged chunks sit below it; "
+              "--excerpt-lines 1 trims each excerpt and says so",
+              rc == 0 and re.search(r"\d+ more judged chunks? below the top 1", out)
+              and re.search(r"\(excerpt trimmed to 1 of \d+ lines\)", out), out)
     finally:
         srv.shutdown()
         shutil.rmtree(tmp, ignore_errors=True)

@@ -139,6 +139,20 @@ _PROHIBIT = re.compile(
     r"avoid(?:s|ing)?|refuse\s+to|no\s+need\s+to|not\s+allowed\s+to|forbidden)\b"
     r"(?!\s+(?:forget|skip|miss|fail|hesitate|neglect|wait)\b)", re.I)
 _NO_BEFORE = re.compile(r"\b(?:no|not|without|zero)\s+(?:\w+\s+)?[`\"']?$", re.I)
+# A string wrapped across two code lines carries its determiner on the line
+# above: "names no " + "commit this repository has" (Verafox's featuremap.py,
+# the pack's review 2026-09-30). The line above, its closing quote and joining
+# operator set aside, ends in the word the detector's own lookbehind would read.
+_DETERMINER_END = re.compile(
+    r"\b(?:the|a|an|this|that|each|every|which|base|merge|first|last|new|one|your|its|"
+    r"no|any|not|without)\s*[\"'`]?\s*[+,\\]?\s*$", re.I)
+# "upload it in your skill settings" is the user installing a pack, not data
+# leaving; the sentence may wrap, so the next prose line is read with it (the
+# pack's own README, 2026-09-30).
+_UPLOAD_SETTINGS = re.compile(r"[^.\n]{0,60}\bsettings\b", re.I)
+# A pack's README says how to install the pack itself; that line is the
+# pack's, not a fetch of someone else's (the pack's review, 2026-09-30).
+_OWN_INSTALL = re.compile(r"\bnpx\s+skills\s+add\s+[\w.-]+/[\w.-]+", re.I)
 _CLAUSE_END = re.compile("[.;:!?](?:\\s|$)|\\s[-–—]+\\s|"
                          "\\b(?:then|but|instead|otherwise)\\b", re.I)
 _SENTENCE_END = re.compile(r"[.;!?](?:\s|$)")
@@ -192,7 +206,8 @@ NEG_IS_FINDING = {"do not read", "do not ask or pause for permission",
 # ---------------------------------------------------------------- detectors
 # (category, label, regex, scope). scope: any | code (code files only) |
 # verb-md (in prose, only with a write verb on the line or the line it
-# continues) | git-context (a git word on the line or its heading) |
+# continues) | verb (the same, in code too: a name that is only an edit when
+# something writes it) | git-context (a git word on the line or its heading) |
 # not-http (skipped on a line about HTTP) | after-fetch (kept only when a
 # fetch word comes before it, on its line or the line it continues). Each
 # category has a fixture home in mutate_selftest.py; case 4b holds the
@@ -209,7 +224,10 @@ _TELEMETRY = (
     r"\bsegment\.(?:io|com)\b|\bgtag\(|\bgoogletagmanager\b|\bgoogle-analytics\b|"
     r"\bplausible\.io\b|\bumami\.is\b|\butm_source\b|\bupdate[-_ ]?checks?\b|"
     r"\bchecks?[-_ ]?(?:for[-_ ]?)?updates?\b|UPDATE_AVAILABLE|\bversion[-_ ]?checks?\b|"
-    r"\bapi/version\b|\bphones?\s+home\b|\bstaleness[-_ ]?checks?\b|"
+    r"\bapi/version\b|\bphones?\s+home\b|\bstaleness[-_ ]?checks?\b[^.\n]{0,40}"
+    r"\b(?:upstream|remote|latest|release|vendor|version|update)s?\b|"
+    r"\b(?:upstream|remote|latest|release|vendor|version|update)s?\b[^.\n]{0,40}"
+    r"\bstaleness[-_ ]?checks?\b|"
     r"\b(?:anonymous|anonymi[sz]ed|usage)\s+(?:telemetry|analytics|data|statistics|stats|"
     r"metrics)\b|\b(?:send|sends|sending|collect|collects|collecting)\b[^.\n]{0,40}"
     r"\b(?:telemetry|analytics)\b|[A-Z0-9]_TELEMETRY\b|\bTELEMETRY_[A-Z]|"
@@ -258,8 +276,10 @@ DETECTORS = [
      re.compile(r"\b(?:SessionStart|SubagentStart|PreToolUse|PostToolUse|UserPromptSubmit|"
                 r"PreCompact|SessionEnd)\b|\bhooks?\.json\b|\"hooks\"\s*:"), "any"),
     ("config", "git config write",
-     re.compile(r"\bgit\s+config\b(?!\s+--get)|core\.hooksPath|hooksPath|\.gitattributes|"
+     re.compile(r"\bgit\s+config\b(?!\s+--get)|core\.hooksPath|hooksPath|"
                 r"\.git/hooks|merge\.[\w-]+\.driver"), "any"),
+    # named in prose or a comment it is a fact about git; edited, it is a write
+    ("config", "git attributes edit", re.compile(r"\.gitattributes\b"), "verb"),
     ("config", "environment variable set",
      re.compile(r"(?:^|[\s;`(])(?:export|setx)\s+[A-Z_][A-Z0-9_]*=|^\s*set\s+[A-Z_][A-Z0-9_]*="
                 r"|\$env:[A-Z_][A-Z0-9_]*\s*=(?!=)|os\.environ\[[^\]]+\]\s*=(?!=)|"
@@ -709,17 +729,34 @@ def scan_text(relpath, text, kind):
             if scope == "after-fetch":
                 # the fetch may sit on the line this one continues
                 hits = [h for h in hits if _FETCHED.search(carry + "\n" + ln[:h[0]])]
+            if scope == "git-context" and carry:
+                # a determiner on the line above covers a match that opens
+                # this one: a string wrapped in code, a sentence wrapped in prose
+                hits = [h for h in hits if ln[:h[0]].strip(" \t\"'`(")
+                        or not _DETERMINER_END.search(carry)]
+            if category == "egress" and is_md and hits:
+                # an upload into the user's own settings, wrapped or not
+                follow = " " + lines[i] if (i < len(lines)
+                                            and not _NEW_ITEM.match(lines[i])) else ""
+                hits = [h for h in hits if not (
+                    h[2].lower().startswith("upload")
+                    and _UPLOAD_SETTINGS.match(ln[h[1]:] + follow))]
             if not hits:
                 continue
             # a write verb on the line or the line it continues, or the line
             # names the file and then shows the block to put in it
-            if scope == "verb-md" and is_md and not (
+            if (scope == "verb" or (scope == "verb-md" and is_md)) and not (
                     _WRITE_VERB.search(ln) or (carry and _WRITE_VERB.search(carry))
                     or (ln.rstrip().endswith(":") and opens_block[i - 1])):
                 notes["config_mentions"].append("%s:%d %s" % (relpath, i, label))
                 continue
             if scope == "git-context" and not (_GIT_CONTEXT.search(ln) or
                                                _GIT_CONTEXT.search(head or "")):
+                continue
+            if category == "install" and is_md and _OWN_INSTALL.search(ln) \
+                    and os.path.basename(relpath).lower() == "readme.md" \
+                    and _SETUP_HEADING.search(head or ""):
+                defensive.append((i, excerpt, "the pack's own install line in its README"))
                 continue
             if scope == "not-http" and _HTTP_WORDS.search(ln):
                 continue
@@ -1183,8 +1220,10 @@ _WIRING_NAMES = {"plugin.json", "hooks.json", "marketplace.json", "install.sh",
 def repo_level_scan(top, root, skill_dirs):
     """Flags in the wiring outside any skill folder: hooks, commands, plugin
     manifests, installers, top-level scripts and bin, README and INSTALL.
-    Wiring under tests/, or under a fixture pragma, is set apart, as in a skill."""
-    flags, in_tests, pragmas, seen, truncated = [], [], [], 0, False
+    Wiring under tests/, or under a fixture pragma, is set apart, as in a skill;
+    a mention that is not an act (a README's own install line) is listed as
+    defensive, as in a skill."""
+    flags, in_tests, pragmas, defensive, seen, truncated = [], [], [], [], 0, False
     tops = [os.path.normcase(os.path.abspath(d)) for d in skill_dirs]
     for p in _walk_files(top):
         r = rel(top, p)
@@ -1205,11 +1244,13 @@ def repo_level_scan(top, root, skill_dirs):
             continue
         f, _d, _n = scan_text(r, t, file_kind(p, t))
         (in_tests if _TEST_PATH.search(r) else flags).extend(_hits(r, f))
+        defensive += [{"file": r, "line": i, "text": x, "why": w} for i, x, w in _d]
         if _n["fixture_spans"]:
             pragmas.append("%s (%s)" % (r, ", ".join(_n["fixture_spans"])))
             in_tests += _apart(r, _n["fixture"])
     return {"repo": rel(root, top), "files_scanned": seen, "truncated": truncated,
-            "flags": flags, "in_tests": in_tests, "pragmas": pragmas}
+            "flags": flags, "in_tests": in_tests, "pragmas": pragmas,
+            "defensive": defensive}
 
 
 def cmd_inventory(a):
@@ -1423,6 +1464,10 @@ def render_inventory(doc):
         o += grouped_flags(r["flags"], "")
         if not r["flags"]:
             o.append("- none")
+        if r.get("defensive"):
+            o.append("- defensive mentions (not flags): " + _cut(
+                ["%s:%d (%s)" % (x["file"], x["line"], x.get("why", ""))
+                 for x in r["defensive"]], 12, "; "))
         o += set_apart_lines(r["in_tests"], r.get("pragmas", []))
         o.append("")
     return "\n".join(o)

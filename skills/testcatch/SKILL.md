@@ -2,7 +2,7 @@
 name: testcatch
 description: Testcatch (formerly rules-that-can-fail) - how to write a test, guard or checker rule that will actually go red when the thing it protects is broken, prove it with a re-injection probe, and hold the test floor with floor_guard.py. Use when adding or reviewing any test, lint rule, assertion, safety check or regression case; before writing a test body, to name the break it catches; when an expected value is built by the code under test; when a test passes on the first run with no drama; when a fix turns an existing test red; when a design ruling is reversed; when a check has started failing every time; and before calling a change safe or reviewing any change that touches tests, test config or CI, a helper agent's included - a new skip, noqa or ts-ignore, a test or assertion gone, a tolerance or timeout loosened, a CI step dropped. Not for proving a change works end to end (verafox). Derived 2026-09-15 from the rule files of a real project, where each pattern below let a defect ship under a green run.
 metadata:
-  version: 1.2.1
+  version: 1.2.3
   renamed_from: rules-that-can-fail (2026-09-30)
   source: derived from the review record of a real project (2026-09)
   credits: "floor-guard contract (diff scoped, exit 0/1/2, 2 never clean) from addyosmani/agent-skills skills/constraint-driven-development/references/floor-guard.md @ 2686b620fc1fed2e8f60c704839c766b8594c6b6 (MIT); name the break, no mirror assertions and the mutation check from obra/superpowers skills/test-driven-development/writing-good-tests.md @ 8ca22dba9a94f28898bbce59f2537ff4d87c747d (MIT). Rewritten in its author's words and built as original code; no text or code copied."
@@ -102,14 +102,17 @@ upstream, else main, else master; `--base <ref>` picks another. Its own proof is
 
 - **Exit 0:** the floor held. **Exit 1:** it dropped; each drop is listed with the
   ledger line that would grandfather it. **Exit 2:** it could not check (not a
-  repository, no base, a git error, a bad ledger, a bad flag).
+  repository, no base, a git error, a bad ledger - a key it does not take or one
+  of the wrong type, such as a ceiling that is not a whole number, named - a bad
+  flag).
 - **Exit 2 is never clean.** It is a question nobody answered, not a pass. Fix what
   stopped it and run it again; never report "no drops" off a 2. The last line is
   always `RESULT: PASS`, `FAIL` or `ERROR`; read that line, not the scrollback.
 - **A drop that is the point of the change** goes in `.floor-guard.json` at the
   repository root, with a verdict and a why (`moved` and `replaced` also name
   `by`). An entry without a reason fails, an entry that matches no drop is stale
-  and fails, the same entry twice fails, and the ceiling only comes down. The shape
+  and fails, the same entry twice fails, and the ceiling only comes down; `about`
+  is free text for the reader, never read by the guard. The shape
   is a production-supersession ledger: a test that fails on any silent loss unless
   a fixture names the verdict and the reason. An entry written to turn
   the run green is the rule edited to pass: the reason has to be true.
@@ -152,4 +155,4 @@ upstream, else main, else master; `--base <ref>` picks another. Its own proof is
   bytecode: an injection stays green and falsely accuses the rule, a restore
   stays red. `-B` stops writing bytecode, not reading it. Run each probe, and the
   check after the restore, under `python -X pycache_prefix=<fresh empty folder>`.
-  (KiT 2026-09-25: a restored `MONITOR_POWER_OFF = 2` still read as 1.)
+  (KiT 2026-09-25: a restored constant still read as its old value.)
