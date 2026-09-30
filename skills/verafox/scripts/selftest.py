@@ -37,8 +37,8 @@ SAFE = {}
 
 
 def run(cwd, *args, env=None):
-    # --record asks Jev since 1.3.6, and the client reads this machine's real
-    # key from ~/.agents/.env. A case that does not bring its own environment
+    # --record asks Jev since 1.3.6, and a Jev client may read this machine's
+    # real key from a file in its home folder. A case that does not bring its own environment
     # runs with no key and a home of the test's own, so no fixture is ever sent.
     if env is None and SAFE:
         env = SAFE
@@ -114,6 +114,18 @@ def check(name, cond, detail=""):
         (detail and not cond) else ""))
 
 
+# This pack ships no Jev client. The cases that drive --judge and the reading at
+# --record through one (28 and 53) run when a client is installed beside this
+# skill, as jev-client/scripts/jev.py, and are named as not run when it is not.
+CLIENT = os.path.exists(os.path.join(HERE, os.pardir, os.pardir, "jev-client", "scripts",
+                                     "jev.py"))
+NOT_RUN = []
+
+
+class _NoClient(Exception):
+    pass
+
+
 # A skill is modular: any agent that reads SKILL.md can run it, in any workflow,
 # beside any other skill or none (the owner, 2026-09-30). So a SKILL.md names a
 # neighbor by its job, never by its name, except on the one line that declares
@@ -122,7 +134,7 @@ def check(name, cond, detail=""):
 # self-tests, so each skill holds it alone. Names are the pack's and other public
 # skills', anywhere; and any skill installed beside this one, where a line points
 # at it as a skill: `name`, (name) or "name skill".
-KNOWN_SKILLS = ("verafox", "levjev", "testcatch", "measure-in-the-browser",
+KNOWN_SKILLS = ("verafox", "testcatch", "measure-in-the-browser",
                 "verify-before-done", "rules-that-can-fail", "skillshaper",
                 "typesafe-ai", "frontend-design", "source-driven-development")
 HOSTS = ("Claude Code", "Claude", "Cursor", "Codex", "Copilot", "Windsurf",
@@ -1243,7 +1255,7 @@ def main():
         # service on this machine stands in for TypeSafe: this proves what is
         # SENT and what is done with the answer, never what Jev would say. The
         # client's own rules - retries, the key file, the endpoint, the lint -
-        # are the jev skill's, tested in its selftest since 2026-09-24.
+        # are the client's own, tested with the client.
         print("\n28. --judge asks Jev once, pinned, and never shows the key")
         posts, reply = [], {"p": {}}
 
@@ -1283,6 +1295,8 @@ def main():
         nokey = dict(fake)
         del nokey["TYPESAFE_API_KEY"]
         try:
+            if not CLIENT:
+                raise _NoClient
             t28 = os.path.join(tmp, "twentyeight")
             os.makedirs(t28)
             put(t28, "app.py", APP_V1)
@@ -1379,8 +1393,8 @@ def main():
             rc, out = run(t28b, "--judge", env=fake)
             check("...nor an example left from an older template's wording",
                   rc == 0 and len(posts) == n and "not judged example.id" in out, out)
-            # The client is the jev skill's since 2026-09-24, and its own
-            # selftest holds its rules. Without that skill beside this one,
+            # The client's own tests hold its rules. Without a client beside
+            # this skill,
             # --judge must say so and ask nothing - never fall back to a copy.
             lonely = os.path.join(tmp, "lonely", "verafox", "scripts")
             os.makedirs(lonely)
@@ -1390,37 +1404,34 @@ def main():
                                 "--project", t28, "--judge"], capture_output=True,
                                timeout=120, env=fake)
             out = p.stdout.decode("utf-8", "replace")
-            check("without the levjev skill beside it, --judge asks nothing and says why",
-                  p.returncode == 2 and "NOT JUDGED the optional levjev skill (the Jev "
-                  "client) is not installed" in out and len(posts) == n, out)
-            # The jev skill became LevJev on 2026-09-29, the one home for all
-            # Jev integration. With levjev
-            # beside it and no jev folder at all, --judge must reach the client.
-            home = os.path.join(tmp, "levhome")
+            check("without a Jev client beside it, --judge asks nothing and says why",
+                  p.returncode == 2 and "NOT JUDGED the optional Jev client (not "
+                  "included) is not installed" in out and len(posts) == n, out)
+            # With a client beside it, --judge must reach it.
+            home = os.path.join(tmp, "clienthome")
             os.makedirs(os.path.join(home, "verafox", "scripts"))
             shutil.copy(FM, os.path.join(home, "verafox", "scripts"))
-            shutil.copytree(os.path.join(HERE, os.pardir, os.pardir, "levjev", "scripts"),
-                            os.path.join(home, "levjev", "scripts"),
+            shutil.copytree(os.path.join(HERE, os.pardir, os.pardir, "jev-client", "scripts"),
+                            os.path.join(home, "jev-client", "scripts"),
                             ignore=shutil.ignore_patterns("__pycache__"))
             n = len(posts)
             p = subprocess.run([sys.executable, os.path.join(home, "verafox", "scripts",
                                 "featuremap.py"), "--project", t28, "--judge"],
                                capture_output=True, timeout=120, env=fake)
             out = p.stdout.decode("utf-8", "replace")
-            check("with levjev beside it and no jev folder, --judge asks through LevJev's client",
-                  p.returncode == 0 and len(posts) == n + 1
-                  and not os.path.exists(os.path.join(home, "jev")), out)
-            # One client, in one place. The forwarder that kept the old path
-            # working went on 2026-09-24, once the global instructions named the
-            # jev skill's path; a copy here would be a second client to drift.
+            check("with a Jev client beside it, --judge asks through it",
+                  p.returncode == 0 and len(posts) == n + 1, out)
+            # One client, in one place: a copy here would be a second client to drift.
             check("this skill carries no copy of the Jev client",
                   not os.path.exists(os.path.join(HERE, "jev.py")),
                   "found %s" % os.path.join(HERE, "jev.py"))
+        except _NoClient:
+            NOT_RUN.append("28")
         finally:
             jsrv.shutdown()
 
         # ------------------------------ 29 environment names through constants
-        # Found on this skill's own Jev client: `KEY_ENV = "TYPESAFE_API_KEY"`,
+        # Found on a Jev client: `KEY_ENV = "TYPESAFE_API_KEY"`,
         # then `os.environ.get(KEY_ENV)`, and the dev face never listed the key.
         print("\n29. a read through a module constant is still that name")
         t29 = os.path.join(tmp, "twentynine")
@@ -2106,6 +2117,8 @@ def main():
         srv53 = http.server.ThreadingHTTPServer(("127.0.0.1", 0), J53)
         threading.Thread(target=srv53.serve_forever, daemon=True).start()
         try:
+            if not CLIENT:
+                raise _NoClient
             fake53 = dict(SAFE, TYPESAFE_API_KEY="test-key-not-real",
                           JEV_ENDPOINT="http://127.0.0.1:%d/v1/systemone"
                           % srv53.server_address[1])
@@ -2151,6 +2164,8 @@ def main():
                           "--observable", "history is empty", env=fake53)
             check("a failed result is not asked: there is nothing it could show",
                   rc == 0 and len(posts53) == n, out[-1500:])
+        except _NoClient:
+            NOT_RUN.append("53")
         finally:
             srv53.shutdown()
 
@@ -2939,10 +2954,10 @@ def main():
               and not rows69["cli.keep"], out[-3000:])
 
         # ------------------------------ 70 an old number that holds another flag
-        # levjev 1.0.5 (2026-09-30): cli.check-question's scripts/jev.py:266 was
+        # A Jev client (2026-09-30): cli.check-question's scripts/jev.py:266 was
         # rewritten, and 266 came to hold --ping's line. --reaim and --check left
         # it at 266 without a word. A project in a subfolder of its repository, as
-        # levjev is, with a proof taken before the rewrite.
+        # that client is, with a proof taken before the rewrite.
         print("\n70. an old line number that now holds another flag is not kept")
         r70 = os.path.join(tmp, "seventy")
         t70 = os.path.join(r70, "tool")
@@ -3081,7 +3096,7 @@ def main():
 
         # ------------------------------ 74 alone, without its optional Jev client
         # The owner, 2026-09-30: each skill is modular and works in any workflow.
-        # This one's only dependency, the levjev client, serves --judge and the
+        # This one's only dependency, an optional Jev client, serves --judge and the
         # reading at --record; installed alone, everything else must run, and
         # both must say by name what is missing and that it is optional, asking
         # nothing.
@@ -3121,17 +3136,19 @@ def main():
         check("RED: --record stores the proof and says the optional Jev client is missing, "
               "by name, asking nothing",
               rc == 0 and "recorded" in out
-              and "NOT JUDGED the optional levjev skill (the Jev client) is not installed"
+              and "NOT JUDGED the optional Jev client (not included) is not installed"
               in out and "Unavailable" not in out and "not_judged" in judged74, out[-1500:])
         rc, out = solo74("--judge")
         check("RED: --judge refuses by name, exit 2, and says the rest runs without it",
-              rc == 2 and "NOT JUDGED the optional levjev skill (the Jev client) is not "
+              rc == 2 and "NOT JUDGED the optional Jev client (not included) is not "
               "installed" in out and "everything but --judge" in out, out[-1500:])
 
     finally:
         _remove(tmp)
 
-    print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
+    print("\n%d passed, %d failed%s" % (len(PASS), len(FAIL), (
+        "; cases %s not run: no Jev client beside this skill (optional, not included)"
+        % " and ".join(NOT_RUN)) if NOT_RUN else ""))
     for f in FAIL:
         print("  FAILED: " + f)
     return 1 if FAIL else 0

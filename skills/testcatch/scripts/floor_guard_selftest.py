@@ -50,7 +50,7 @@ def check(name, cond, detail=""):
 # self-tests, so each skill holds it alone. Names are the pack's and other public
 # skills', anywhere; and any skill installed beside this one, where a line points
 # at it as a skill: `name`, (name) or "name skill".
-KNOWN_SKILLS = ("verafox", "levjev", "testcatch", "measure-in-the-browser",
+KNOWN_SKILLS = ("verafox", "testcatch", "measure-in-the-browser",
                 "verify-before-done", "rules-that-can-fail", "skillshaper",
                 "typesafe-ai", "frontend-design", "source-driven-development")
 HOSTS = ("Claude Code", "Claude", "Cursor", "Codex", "Copilot", "Windsurf",

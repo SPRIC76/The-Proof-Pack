@@ -28,8 +28,8 @@ WHAT IT DOES
                 entry declares are requested; redirects are never followed.
     --judge     ask Jev, in one request, whether each entry's observable is
                 evidence of its intent - the Intended bar no test suite checks.
-                A reading, never a failure; needs the optional levjev skill
-                (the Jev client) installed beside this one, and TYPESAFE_API_KEY.
+                A reading, never a failure; needs a Jev client, not included,
+                installed beside this skill as jev-client/, and TYPESAFE_API_KEY.
 
 WHAT IT WILL NEVER DO
     Touch the AUTHORED half of a map, beyond --reaim moving a `code:` or
@@ -1147,7 +1147,7 @@ def _py_env_reads(text):
         return ((isinstance(node, ast.Attribute) and node.attr == "environ")
                 or (isinstance(node, ast.Name) and node.id == "environ"))
     # A name read through a module constant - `KEY_ENV = "TYPESAFE_API_KEY"`,
-    # then `os.environ.get(KEY_ENV)` - is still that name. This skill's own Jev
+    # then `os.environ.get(KEY_ENV)` - is still that name. A Jev
     # client read its key that way and the dev face did not list it. A name
     # assigned more than once is not resolved: which one is read is not fixed.
     consts, seen = {}, {}
@@ -2032,7 +2032,7 @@ def _said(mv, span):
 def _file_lines(root, commit, path, shown):
     """`path`'s lines at `commit`, or None. `./` reads the path from the
     project folder, as a pointer names it, where the project is a subfolder of
-    its repository (levjev, verafox) as well as at its root."""
+    its repository (a skill in a repository of skills) as well as at its root."""
     key = (commit, path)
     if key not in shown:
         ok, out = git(root, "show", "%s:./%s" % (commit, path))
@@ -2162,8 +2162,8 @@ def _moved_pointers(root, mp, text):
             # One line, and a change on it. Carried through a proof, it took the
             # change's first line - verafox's ten cli.* pointers all went to
             # 3414, its argparse block's first line, "the proof still holds";
-            # declined, a number that did not move was dropped unsaid - levjev's
-            # cli.check-question stayed on 266, --ping's line now (1.4.7).
+            # declined, a number that did not move was dropped unsaid - a Jev
+            # client's cli.check-question stayed on 266, --ping's line now (1.4.7).
             # Line 1 is exempt: `path:1` names the file itself, as the derived
             # route., script. and ci. rows do, and a header rewritten around it
             # leaves it the file's first line (KiT, selftest 56).
@@ -3460,18 +3460,18 @@ JUDGE_LOW, JUDGE_HIGH = 0.30, 0.70       # unvalidated: reference/jev-calibratio
 
 # The client is an optional dependency: installed alone, this skill runs, and
 # the two places that need Jev say by name what is missing (1.4.9).
-NO_CLIENT = ("NOT JUDGED the optional levjev skill (the Jev client) is not installed "
+NO_CLIENT = ("NOT JUDGED the optional Jev client (not included) is not installed "
              "beside this one (no %s)")
 RUNS_WITHOUT = "everything but --judge and the reading at --record runs without it"
 
 
 def _jev_client():
-    """(module, path) of the levjev skill's client, installed beside this skill -
-    its own skill since 2026-09-24 and LevJev since 2026-09-29, the one home for
-    all Jev integration, so every caller asks Jev one way. The module is None
-    when that skill is not there, and --judge then asks nothing."""
+    """(module, path) of the Jev client, not included in this pack:
+    jev-client/scripts/jev.py in the skills folder that holds this skill, so
+    every caller asks Jev one way. The module is None when it is not there,
+    and --judge then asks nothing."""
     path = os.path.normpath(os.path.join(
-        os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir, "levjev",
+        os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir, "jev-client",
         "scripts", "jev.py"))
     if not os.path.exists(path):
         return None, path
@@ -3513,7 +3513,7 @@ def _judge_record(root, feature, observable):
     jev, where = _jev_client()
     if jev is None:
         print("  " + NO_CLIENT % where + " - the proof is recorded; " + RUNS_WITHOUT)
-        return {"not_judged": "no levjev skill"}
+        return {"not_judged": "no Jev client"}
     q = _intent_question(entry["intent"], observable)
     problems = jev.lint({feature: q})
     if problems:
@@ -3691,7 +3691,7 @@ def main(argv=None):
     ap.add_argument("--branch",
                     help="--live: the branch production deploys from")
     ap.add_argument("--judge", action="store_true",
-                    help="ask Jev whether each observable shows its intent (levjev)")
+                    help="ask Jev whether each observable shows its intent (a Jev client, not included)")
     a = ap.parse_args(argv)
 
     root = os.path.abspath(a.project)

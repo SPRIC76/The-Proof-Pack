@@ -7,9 +7,10 @@ written from the same reading as the code. Everything else is code's job.
 
 ## The one path
 
-Every Jev call goes through the **levjev skill's** client (`levjev/scripts/jev.py`, the
-levjev skill installed beside this one in the same skills folder; the jev skill's until 2026-09-29). The pin, the lint, the key and the retries are that
-skill's rules, in its SKILL.md with the selftest check that defends each one. Here
+Every Jev call goes through one Jev client, not included in this pack: `jev.py`,
+installed beside this skill as `jev-client/scripts/jev.py` in the same skills folder.
+The pin, the lint, the key and the retries are that client's rules, defended by its
+own tests. Here
 is only what `--judge` itself adds, each defended by Verafox's selftest case 28:
 
 | What `--judge` does | The test that fails if it breaks |
@@ -18,7 +19,7 @@ is only what `--judge` itself adds, each defended by Verafox's selftest case 28:
 | Inline the text: each question carries its own `intent` and `observable` as named fields | "each question carries its own entry's text inline" |
 | Jev decides, code computes: the two thresholds below live in `featuremap.py`; Jev only returns a probability | the low / torn / high cases |
 | An entry carrying a literal Jev cannot read is listed as not judged, by name | "an entry carrying a literal Jev cannot read is not asked" |
-| No key, or no levjev skill, means nothing is asked and it says so; with levjev beside it and no jev folder, it asks | "with no key nothing is asked", "without the levjev skill beside it, --judge asks nothing", "with levjev beside it and no jev folder, --judge asks through LevJev's client" |
+| No key, or no Jev client, means nothing is asked and it says so; with a client beside it, it asks | "with no key nothing is asked", "without a Jev client beside it, --judge asks nothing", "with a Jev client beside it, --judge asks through it" |
 
 ## The gate: not yet
 
@@ -62,7 +63,7 @@ of 0.5 means torn, not "medium confidence".
 
 | Item | State |
 |---|---|
-| Client, pin, lint, one-request batching, retries, key handling | **TESTED** 2026-09-23 against a fake service on this machine: selftest 28, with each rule broken on purpose and seen to turn it red. Since 2026-09-24 the client and those tests are the jev skill's (LevJev's since 2026-09-29), re-proved there the same way; `--judge` keeps case 28 for what it adds |
+| Client, pin, lint, one-request batching, retries, key handling | **TESTED** 2026-09-23 against a fake service on this machine: selftest 28, with each rule broken on purpose and seen to turn it red. Since 2026-09-24 the client's rules are tested with the client itself, re-proved there the same way; `--judge` keeps case 28 for what it adds, run when a client is installed beside this skill |
 | A real request to TypeSafe | **Verified 2026-09-23.** `jev.py --ping`: jev-1.13.0 answered in 1228 ms, 275 input tokens, noul 0.99, with the key from `~/.agents/.env`. The first check looked only at the Windows environment (user, machine, process), found nothing, and nearly reported the key missing; the client now reads both places |
 | Thresholds | **Unvalidated** placeholders until the procedure above runs |
 | A reading at every recorded proof | **TESTED** 2026-09-29, selftest 53 against the fake service; **driven** the same day against TypeSafe on Verafox's own `cli.reaim`: 0.43, torn, jev-1.13.0, kept in the capture. Its intent was written as a history ("three ranges named other code...") rather than as an outcome, and a history is hard to hold an observable against. Intents written as outcomes are worth checking first when calibrating |

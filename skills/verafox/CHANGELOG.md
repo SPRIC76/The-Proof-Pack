@@ -26,10 +26,14 @@ before you raise a ceiling.
   ids are unchanged.
 - **Installed alone, it says what it lacks.** Without the optional Jev client
   beside it, `--record` stores the proof and `--judge` exits 2, each printing
-  `NOT JUDGED the optional levjev skill (the Jev client) is not installed beside
+  `NOT JUDGED the optional Jev client (not included) is not installed beside
   this one (no <path>)` and that everything else runs. **Upgrade effect:** a
-  script matching the old line, `NOT JUDGED the levjev skill is not installed`,
-  should match `NOT JUDGED` instead.
+  script matching the old line should match `NOT JUDGED` instead.
+- **This pack no longer includes a Jev client.** `--judge` and the reading at
+  `--record` look for one at `jev-client/scripts/jev.py` beside this skill, and the
+  self-test runs cases 28 and 53 only when one is there. **Upgrade effect:** a
+  copy that judged through the client this pack used to carry now says NOT
+  JUDGED until a client is installed there.
 - **American spelling throughout**, in prose, help, messages and comments.
   `mutate.py ledger --license` is the documented flag and `--licence` still
   works. The inventory JSON keys `licence` and `licences`, and the `licence`
